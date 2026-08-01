@@ -1,0 +1,33 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-and-test:
+    name: ${{ matrix.os }} / ${{ matrix.config }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+        config: [Debug, Release]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -B build -DCMAKE_BUILD_TYPE=${{ matrix.config }} -DPRICETIME_WERROR=ON
+
+      - name: Build
+        run: cmake --build build --config ${{ matrix.config }} --parallel
+
+      - name: Test
+        run: ctest --test-dir build -C ${{ matrix.config }} --output-on-failure
+
+      # Keeps the bench binary from bitrotting; numbers from shared CI runners
+      # are meaningless and are never published.
+      - name: Bench smoke
+        if: runner.os == 'Linux' && matrix.config == 'Release'
+        run: ./build/bench/pricetime_bench --ops 2000 --core -1
