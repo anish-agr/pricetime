@@ -6,10 +6,12 @@
 #include <string>
 
 #if defined(_MSC_VER) && (defined(_M_X64) || defined(_M_IX86))
+#include <emmintrin.h>
 #include <intrin.h>
 #define PRICETIME_X86 1
 #elif defined(__x86_64__) || defined(__i386__)
 #include <cpuid.h>
+#include <emmintrin.h>
 #include <x86intrin.h>
 #define PRICETIME_X86 1
 #else
@@ -22,9 +24,24 @@ namespace pricetime::bench {
 // at a fixed reference rate regardless of turbo or idle states, so tick deltas
 // convert to wall time with one calibration. Falls back to steady_clock
 // nanoseconds on non-x86.
+//
+// The LFENCEs are not optional. RDTSC is not a serializing instruction: an
+// out-of-order core is free to execute it before the work that precedes it
+// has retired, and to hoist work from after it. Without fences, timing a
+// sub-100ns operation measures the scheduler's imagination rather than the
+// code — an unfenced build of this benchmark reported ~12ns cancels, which is
+// fewer cycles than the cache misses that operation provably incurs.
+//
+// LFENCE before and after brackets the sample: the first waits for prior
+// instructions to retire, the second stops later ones from moving up. This
+// costs roughly 20-30 cycles per timestamp, which is measured and reported as
+// timer overhead rather than subtracted out.
 inline std::uint64_t now_ticks() noexcept {
 #if PRICETIME_X86
-  return __rdtsc();
+  _mm_lfence();
+  const std::uint64_t t = __rdtsc();
+  _mm_lfence();
+  return t;
 #else
   return static_cast<std::uint64_t>(
       std::chrono::duration_cast<std::chrono::nanoseconds>(

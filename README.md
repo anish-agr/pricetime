@@ -4,25 +4,34 @@ A price-time-priority limit order book and matching engine in C++20, built to be
 replayed against real full-day NASDAQ TotalView-ITCH data — with latency numbers
 measured honestly enough to defend in an interview.
 
-## Headline numbers (M1)
+## Headline numbers
 
-Dense-array ladder, 500k samples per scenario, exact percentiles:
+Tree ladder + open-addressing id map, 1M samples per scenario, exact percentiles,
+serialized timestamps:
 
 | operation | p50 | p99 | p99.9 | throughput |
 |---|---|---|---|---|
-| add (passive, book deepening to 500k orders) | 373 ns | 976 ns | 12.0 µs | 2.14 M/s |
-| add (steady state, ~100k resting orders) | 537 ns | 981 ns | 1.24 µs | 1.07 M/s* |
-| cancel (steady state) | 1.24 µs | 1.82 µs | 2.25 µs | 1.07 M/s* |
-| execute (aggressive add, one full fill) | 1.03 µs | 1.91 µs | 5.84 µs | 0.86 M/s |
+| add (passive, book deepening to 1M orders) | 185 ns | 366 ns | 1.06 µs | 4.03 M/s |
+| add (steady state, ~100k resting orders) | 182 ns | 322 ns | 518 ns | 3.66 M/s* |
+| cancel (steady state) | 292 ns | 527 ns | 1.08 µs | 3.66 M/s* |
+| execute (aggressive add, one full fill) | 231 ns | 419 ns | 637 ns | 3.61 M/s |
 
 \* add and cancel alternate in one loop; the throughput figure is the combined loop's.
 
-**Environment, disclosed:** Intel Core Ultra 5 225U (laptop, **on battery**,
-Balanced power plan), Windows 11, MSVC 2022 `/O2`, pinned to a P-core
-(auto-selected via `EfficiencyClass`), high process priority. Timer overhead
-(~14 ns p50, measured) is included in every sample, not subtracted. Numbers
-will be re-baselined on wall power; the value of M1 is the methodology and the
-relative comparisons, which are stable run-to-run.
+**Methodology, in full:** Intel Core Ultra 5 225U, on AC power, Windows 11,
+MSVC 2022 `/O2`, pinned to a P-core (auto-selected via `EfficiencyClass`),
+high process priority. Every sample is bracketed by `LFENCE`-serialized `RDTSC`
+reads, calibrated against `steady_clock`. **Timer overhead (13.0 ns p50,
+13.7 ns p99) is included in every number, not subtracted.** Percentiles are
+exact — full sorted sample sets, no histogram binning. This is a laptop, not a
+tuned server: treat the relative comparisons as the result and the absolute
+numbers as an upper bound.
+
+Reproduce with:
+
+```bash
+./build/bench/pricetime_bench --ops 1000000
+```
 
 ## Why this exists
 
@@ -30,71 +39,107 @@ Every toy order book on GitHub stops at "it matches orders." This one is built
 around two harder claims:
 
 1. **Determinism is testable.** The same input stream must produce a
-   bit-identical book, fingerprinted by a platform-independent state hash.
-   Property tests enforce it before any benchmark number is trusted.
-2. **Latency numbers are only as good as their methodology.** Percentiles come
-   from full sorted sample sets (no histogram binning error), timed with the
-   invariant TSC, calibrated against `steady_clock`, on a pinned core, with the
-   timer's own overhead measured and reported.
+   bit-identical book, fingerprinted by a platform-independent state hash, and
+   the fast implementation must agree op-for-op with an independently written
+   naive model.
+2. **Latency numbers are only as good as their methodology** — and a benchmark
+   that only reports the cases where your design wins is marketing, not
+   measurement. The worst case of the design I expected to win is in the table
+   below.
 
-## Design (M1)
+Full design rationale and the measurement post-mortem are in
+[ARCHITECTURE.md](ARCHITECTURE.md).
+
+## What the measurements showed (including where I was wrong)
+
+The book is parameterized on two compile-time policies — the **price ladder**
+and the **id map** — so both choices could be measured rather than assumed.
+
+**Finding 1: the id map dominates; the ladder barely matters.** I expected the
+dense array ladder to win clearly; it is the folk-wisdom answer for matching
+engines. Holding everything else constant and swapping only the id map:
+
+| configuration | add p50 | cancel p50 | execute p50 | add p99.9 |
+|---|---|---|---|---|
+| dense ladder + open addressing | 176 ns | 349 ns | 195 ns | 407 ns |
+| dense ladder + `std::unordered_map` | 210 ns | **742 ns** | **546 ns** | **8761 ns** |
+| tree ladder + open addressing | 185 ns | 348 ns | 231 ns | 1065 ns |
+
+Ladder choice moves the median by a few percent. Id-map choice moves cancel by
+2.1x, execute by 2.8x, and the p99.9 tail on add by **21x** — that last one is
+`unordered_map`'s rehashing landing unpredictably on individual operations.
+
+At ~175 ns/op the time goes to cache misses on order nodes and the id-map
+probe; the ladder lookup is a small slice of it. I tested the obvious
+explanation — that the dense array's 5 MB span was thrashing cache — by adding
+a tight-range ladder sized to the traded band so it fits in L2. It made no
+difference. The footprint was not the bottleneck either.
+
+**Finding 2: the dense ladder has a 1400x pathology.** The array finds the next
+best price by scanning toward worse prices when the best level empties. A
+scenario built to defeat that — only two active levels, at opposite ends of the
+range, best one repeatedly emptied:
+
+| ladder | execute p50 (worst case) | vs. normal workload |
+|---|---|---|
+| dense array | 81.4 µs | 420x slower |
+| tree map | 57 ns | unchanged |
+
+Not a bug — the documented cost of the layout, bounded in practice by sizing
+the range to the instrument. It stays in the table because a benchmark that
+hides its own worst case is not a benchmark.
+
+**Conclusion:** the array ladder buys nothing measurable on this workload and
+carries a 1400x worst case. The configuration I would ship today is the tree
+ladder with the open-addressing id map — which is not what I assumed when I
+started. Whether that survives real ITCH order flow is M2's job.
+
+## Design
 
 - **Zero external dependencies in the core** — matching and book code is
   header-only C++20, standard library only.
-- Hash map from order id → order node: O(1) cancel and replace lookup.
+- Order id → node map: O(1) cancel and replace. Cancels outnumber trades ~10:1
+  on real equity feeds, so this is the true hot path, not matching.
 - Intrusive doubly-linked FIFO per price level: queue operations never
-  allocate; a partially filled order keeps its time priority.
-- Order nodes live in a chunked arena with stable addresses and LIFO free-list
-  recycling. (Not `std::deque`: MSVC's deque uses tiny blocks — one heap
-  allocation per Order-sized element — which silently puts `operator new` on
-  the hot path.)
-- **The price ladder is a compile-time policy**, and both interesting answers
-  are implemented and benchmarked against each other:
-  - `DenseLadder` — per side, a `vector<Level>` indexed by `(price − min)`.
-    O(1) lookup, contiguous memory; costs a bounded price range and a scan
-    toward worse prices when the best level empties.
-  - `MapLadder` — per side, a red-black tree keyed by price. O(log L) in
-    active levels, unbounded range, pointer-chasing on every touch.
-- Single-threaded on purpose. Concurrency arrives in M3 as an explicit design
-  step (lock-free SPSC queues between network and matching threads), not as a
-  premature optimization.
-
-### Ladder head-to-head (same seeded workload, same run)
-
-| ladder | operation | p50 ns | p99 ns | p99.9 ns |
-|---|---|---|---|---|
-| dense | add (passive) | **373** | **976** | 12004 |
-| map | add (passive) | 518 | 1237 | 30888 |
-| dense | mixed add | **537** | **981** | **1245** |
-| map | mixed add | 676 | 1158 | 1547 |
-| dense | mixed cancel | **1242** | **1824** | **2253** |
-| map | mixed cancel | 1343 | 1932 | 2273 |
-| dense | execute (1 fill) | 1034 | 1906 | 5840 |
-| map | execute (1 fill) | **973** | **1669** | **5341** |
-
-What the numbers say: the dense array wins wherever levels persist — adds and
-steady-state traffic — because a level lookup is one subtract and one indexed
-load instead of a tree walk. The map pulls even on the execute workload, where
-almost every fill empties a level: dense pays its best-pointer rescan across
-empty slots exactly there, the tree pays a cheap `erase` + `begin`. Both books
-process identical op streams and end with identical state fingerprints, every
-run — the benchmark doubles as a differential test.
-
-Known next bottleneck (M1.5): both ladders spend much of the cancel path in
-`std::unordered_map` (bucket-chain walk plus a node allocation per insert);
-replacing it with an open-addressing id map is the next measured change.
+  allocate, and a partially filled order keeps its time priority.
+- Order nodes live in a chunked arena with stable addresses and an **intrusive**
+  free list. (Not `std::deque` — MSVC's deque allocates once per Order-sized
+  element. Not a `vector` free list either; see the allocation test below.)
+- **Open-addressing id map** with linear probing and **backward-shift deletion**
+  (Knuth Algorithm R) rather than tombstones — an exchange session cancels
+  millions of orders, and tombstones would degrade every probe chain until a
+  rehash pauses the world.
+- Order types: limit (GTC), IOC, FOK with a liquidity pre-scan, and market
+  orders, all sharing one matching path via a compile-time `HasLimit` switch.
+- Single-threaded on purpose. Concurrency is M3's explicit design step.
 
 ## Testing
 
-- Property tests (doctest), run against **both** ladder policies: book never
-  crossed or locked, share conservation (`added = 2·traded + canceled +
-  resting`) maintained through every mixed random stream, cancel-of-unknown
-  rejected, FIFO priority under partial fills, replace loses time priority.
-- **Differential testing:** dense and map books consume the same seeded stream
-  and must produce identical state hashes at every checkpoint.
+87 test cases, 7.3M assertions, every suite run against **both** ladder
+policies and **both** id-map policies.
+
+- **Differential testing against an independent model.** `tests/reference_book.hpp`
+  is a naive O(n) book — flat vector, linear scans, nothing shared with the real
+  implementation. Every policy combination is checked against it op by op:
+  same result codes, same execution stream, same state fingerprint after
+  *every* operation. This exists because dense-vs-map comparison has a blind
+  spot — both run the same matching loop, so a semantic bug would appear in
+  both and pass.
+- **Structural invariants** walked mid-stream: never crossed, levels sorted,
+  FIFO links consistent both ways, aggregates equal to member sums, and
+  `added = 2·traded + canceled + resting`.
 - **Golden replay:** a seeded 100k-op stream must hash to a pinned constant on
-  every platform, compiler, and ladder — matching semantics cannot drift
-  silently.
+  every platform, compiler, and policy. It earned its keep — the M1.5 refactor
+  swapped the id map, rewrote the pool, and added four order types, and the
+  constant never moved.
+- **Deterministic performance tests.** CI timing is noise, so CI asserts on
+  allocations instead: the test binary replaces global `operator new` and
+  requires a warmed book to run 200k add/cancel ops with **zero** heap
+  allocations. This caught a real defect — the pool's free list was a
+  `std::vector<Order*>`, so the free list allocated while handing out recycled
+  memory. It is an intrusive chain now.
+- CI runs Windows + Ubuntu × Debug + Release with warnings-as-errors, plus an
+  ASan/UBSan job.
 
 ## Building
 
@@ -106,18 +151,20 @@ cmake --build build --config Release --parallel
 ctest --test-dir build -C Release --output-on-failure
 ```
 
-The benchmark is `build/bench/pricetime_bench`. It picks a performance core
-automatically; `--core N` overrides, `--core -1` disables pinning, `--ops N`
-sets the per-scenario sample count, `--ladder dense|map|both` selects the
-ladder.
+Benchmark flags: `--ops N` per-scenario samples, `--core N` pin target
+(`-1` disables; default auto-selects a performance core), `--ladder
+dense|map|both`, `--no-adversarial`, `--no-idmap-compare`.
 
 ## Roadmap
 
-- **M1 — the book:** price-time-priority limit order book (add / cancel /
-  replace / execute), property tests, first latency histograms. *(done)*
+- **M1 — the book:** price-time-priority book (add / cancel / replace /
+  execute), IOC/FOK/market, property tests, latency histograms. *(done)*
+- **M1.5 — measured optimization:** open-addressing id map, intrusive free
+  list, allocation guards, reference-model differential testing. *(done)*
 - **M2 — real data:** NASDAQ TotalView-ITCH 5.0 parser (binary, big-endian,
-  memory-mapped), full-day book rebuild for chosen symbols, throughput numbers
-  and a flame graph.
+  memory-mapped), full-day book rebuild, throughput and a flame graph. The
+  `Op` type in `include/pricetime/op.hpp` is the seam: the parser becomes just
+  another producer, and tests, replay, and benchmarks consume it unchanged.
 - **M3 — the engine as a server:** TCP order gateway, UDP multicast market-data
   feed, lock-free SPSC queues, wire-to-wire latency.
 - **M4 — the strategy sandbox:** naive market maker vs. the replayed day; PnL,

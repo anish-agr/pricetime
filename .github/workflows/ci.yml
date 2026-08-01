@@ -27,7 +27,28 @@ jobs:
         run: ctest --test-dir build -C ${{ matrix.config }} --output-on-failure
 
       # Keeps the bench binary from bitrotting; numbers from shared CI runners
-      # are meaningless and are never published.
+      # are meaningless and are never published. The perf property that IS
+      # enforced in CI is deterministic: see the allocation tests.
       - name: Bench smoke
         if: runner.os == 'Linux' && matrix.config == 'Release'
         run: ./build/bench/pricetime_bench --ops 2000 --core -1
+
+  sanitizers:
+    name: ubuntu / asan+ubsan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: >
+          cmake -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          -DPRICETIME_SANITIZE=ON -DPRICETIME_WERROR=ON -DPRICETIME_BUILD_BENCH=OFF
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+        env:
+          ASAN_OPTIONS: detect_leaks=1:abort_on_error=1
+          UBSAN_OPTIONS: print_stacktrace=1

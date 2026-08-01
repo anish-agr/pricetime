@@ -8,6 +8,7 @@ project(pricetime
 option(PRICETIME_BUILD_TESTS "Build unit and property tests" ON)
 option(PRICETIME_BUILD_BENCH "Build latency benchmarks" ON)
 option(PRICETIME_WERROR "Treat warnings as errors" OFF)
+option(PRICETIME_SANITIZE "Build with address and undefined-behavior sanitizers" OFF)
 
 # Core: header-only, zero external dependencies.
 add_library(pricetime INTERFACE)
@@ -27,6 +28,18 @@ else()
   if(PRICETIME_WERROR)
     target_compile_options(pricetime_warnings INTERFACE -Werror)
   endif()
+endif()
+
+if(PRICETIME_SANITIZE)
+  if(MSVC)
+    message(FATAL_ERROR "PRICETIME_SANITIZE is only wired up for GCC/Clang")
+  endif()
+  # The tests replace global operator new/delete; ASan must be told to stand
+  # aside there rather than intercepting, which it does automatically for
+  # replaced operators. UBSan runs with trap-on-error so CI fails loudly.
+  target_compile_options(pricetime_warnings INTERFACE
+    -fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all)
+  target_link_options(pricetime_warnings INTERFACE -fsanitize=address,undefined)
 endif()
 
 if(PRICETIME_BUILD_TESTS)

@@ -2,6 +2,7 @@
 
 #include <functional>
 #include <map>
+#include <type_traits>
 
 #include "pricetime/level.hpp"
 #include "pricetime/types.hpp"
@@ -39,17 +40,29 @@ class MapLadder {
     return asks_.empty() ? nullptr : &asks_.begin()->second;
   }
 
-  // Visit levels best -> worst.
+  // Visit levels best -> worst. A callback returning bool stops the walk when
+  // it returns false.
   template <class F>
   void for_each_level(Side s, F&& f) const {
     if (s == Side::Bid) {
-      for (const auto& kv : bids_) f(kv.second);
+      walk(bids_, f);
     } else {
-      for (const auto& kv : asks_) f(kv.second);
+      walk(asks_, f);
     }
   }
 
  private:
+  template <class Map, class F>
+  static void walk(const Map& m, F& f) {
+    for (const auto& kv : m) {
+      if constexpr (std::is_invocable_r_v<bool, F&, const Level&>) {
+        if (!f(kv.second)) return;
+      } else {
+        f(kv.second);
+      }
+    }
+  }
+
   template <class Map>
   static Level* get_or_create_in(Map& m, Price p) {
     const auto [it, inserted] = m.try_emplace(p);

@@ -3,6 +3,7 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include <type_traits>
 #include <vector>
 
 #include "pricetime/level.hpp"
@@ -76,7 +77,8 @@ class DenseLadder {
   }
 
   // Visit levels best -> worst. Walks the array from the best index, skipping
-  // inactive slots, until every active level has been seen.
+  // inactive slots, until every active level has been seen. A callback
+  // returning bool stops the walk when it returns false.
   template <class F>
   void for_each_level(Side s, F&& f) const {
     const SideLadder& sl = sides_[index_of(s)];
@@ -86,7 +88,11 @@ class DenseLadder {
     for (std::int64_t i = sl.best; seen < sl.active_levels; i += step) {
       const Level& lvl = sl.levels[static_cast<std::size_t>(i)];
       if (lvl.order_count != 0) {
-        f(lvl);
+        if constexpr (std::is_invocable_r_v<bool, F&, const Level&>) {
+          if (!f(lvl)) return;
+        } else {
+          f(lvl);
+        }
         ++seen;
       }
     }

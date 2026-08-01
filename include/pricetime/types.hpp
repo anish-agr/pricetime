@@ -17,6 +17,12 @@ using OrderId = std::uint64_t;
 
 enum class Side : std::uint8_t { Bid = 0, Ask = 1 };
 
+// How long an aggressive order is allowed to live.
+//  - GoodTillCancel:    any unfilled remainder rests in the book.
+//  - ImmediateOrCancel: fill what you can right now, kill the rest.
+//  - FillOrKill:        fill the whole quantity immediately or do nothing.
+enum class TimeInForce : std::uint8_t { GoodTillCancel = 0, ImmediateOrCancel = 1, FillOrKill = 2 };
+
 [[nodiscard]] constexpr Side opposite(Side s) noexcept {
   return s == Side::Bid ? Side::Ask : Side::Bid;
 }

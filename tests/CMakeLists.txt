@@ -14,10 +14,15 @@ FetchContent_MakeAvailable(doctest)
 
 add_executable(pricetime_tests
   test_main.cpp
+  alloc_counter.cpp
   test_primitives.cpp
   test_book.cpp
   test_matching.cpp
-  test_properties.cpp)
+  test_order_types.cpp
+  test_id_map.cpp
+  test_properties.cpp
+  test_reference_diff.cpp
+  test_alloc.cpp)
 
 target_link_libraries(pricetime_tests
   PRIVATE pricetime::pricetime pricetime_warnings doctest::doctest)

@@ -27,6 +27,7 @@
 #include "affinity.hpp"
 #include "histogram.hpp"
 #include "pricetime/book.hpp"
+#include "pricetime/id_map.hpp"
 #include "pricetime/ladder_dense.hpp"
 #include "pricetime/ladder_map.hpp"
 #include "timing.hpp"
@@ -64,7 +65,17 @@ struct Config {
   int core = kAutoCore;
   bool run_dense = true;
   bool run_map = true;
+  bool run_stdmap_id = true;  // also bench the std::unordered_map id policy
+  bool run_adversarial = true;
+  bool run_tight = true;  // dense ladder sized to the instrument, not the universe
 };
+
+// The wide ladder spans 2^17 ticks: enough for any instrument, and 5 MB per
+// side. The tight ladder covers only the band the bench actually trades, so
+// the whole ladder is a few tens of KB and stays cache-resident. Comparing
+// the two isolates the dense array's memory footprint from its O(1) lookup.
+constexpr Price kTightMin = 99000;
+constexpr Price kTightMax = 101000;
 
 struct Row {
   std::string ladder;
@@ -201,6 +212,50 @@ std::uint64_t run_ladder(const char* ladder_name, const Config& cfg,
   return sink;
 }
 
+// The dense ladder's worst case, measured rather than hidden.
+//
+// The array ladder finds the next-best price by scanning toward worse prices
+// when the best level empties. Normal markets cluster orders near the touch,
+// so that scan is a step or two. This scenario builds the opposite: a book
+// whose only two active levels sit at opposite ends of the configured price
+// range, and repeatedly empties the best one. Every fill then walks the whole
+// range. The tree ladder does not care — it is O(log L) regardless.
+//
+// A real deployment bounds this by sizing the price range to the instrument
+// rather than to the representable universe, but the pathology is real and
+// belongs in the numbers.
+template <class MakeBook>
+void run_adversarial(const char* ladder_name, const Config& cfg, std::vector<Row>& rows,
+                     MakeBook make) {
+  auto book = make();
+  const std::uint64_t reps = cfg.ops / 10 + 1;  // deliberately expensive; do fewer
+  book.reserve_orders(reps * 2 + 16);
+  OrderId next_id = 1;
+
+  // A deep anchor at the far end of the range keeps the side alive so the
+  // rescan has to traverse the entire span to reach it.
+  const Price far_ask = kDenseMax - 1;
+  const Price near_ask = kDenseMin + 1;
+  book.add_limit(next_id++, Side::Ask, far_ask, 1000000);
+
+  pb::SampleSet s(reps);
+  const auto w0 = std::chrono::steady_clock::now();
+  for (std::uint64_t i = 0; i < reps; ++i) {
+    // Post a lone order at the near end: it becomes the new best ask.
+    book.add_limit(next_id++, Side::Ask, near_ask, 10);
+    // Consuming it empties that level, forcing a full-range rescan for the
+    // next best. Only the consuming op is timed.
+    const OrderId aggressor = next_id++;
+    const std::uint64_t t0 = pb::now_ticks();
+    book.add_limit(aggressor, Side::Bid, near_ask, 10);
+    const std::uint64_t t1 = pb::now_ticks();
+    s.add(t1 - t0);
+  }
+  const double secs = wall_seconds(w0);
+  rows.push_back({ladder_name, "execute (worst-case rescan)", s.stats(),
+                  static_cast<double>(reps) / secs / 1e6});
+}
+
 void print_rows(const std::vector<Row>& rows, double tpn) {
   std::printf("\n| ladder | operation             | samples |  p50 ns |  p90 ns |  p99 ns "
               "| p99.9 ns |  max ns | mean ns | Mops/s |\n");
@@ -228,6 +283,10 @@ int main(int argc, char** argv) {
       const char* v = argv[++i];
       cfg.run_dense = std::strcmp(v, "dense") == 0 || std::strcmp(v, "both") == 0;
       cfg.run_map = std::strcmp(v, "map") == 0 || std::strcmp(v, "both") == 0;
+    } else if (std::strcmp(argv[i], "--no-adversarial") == 0) {
+      cfg.run_adversarial = false;
+    } else if (std::strcmp(argv[i], "--no-idmap-compare") == 0) {
+      cfg.run_stdmap_id = false;
     }
   }
   if (cfg.ops == 0) {
@@ -268,11 +327,35 @@ int main(int argc, char** argv) {
   std::uint64_t sink_dense = 0;
   std::uint64_t sink_map = 0;
   if (cfg.run_dense) {
-    sink_dense = run_ladder("dense", cfg, rows,
-                            [] { return OrderBook<DenseLadder>{kDenseMin, kDenseMax}; });
+    sink_dense = run_ladder("dense", cfg, rows, [] {
+      return OrderBook<DenseLadder, OpenAddressIdMap>{kDenseMin, kDenseMax};
+    });
   }
   if (cfg.run_map) {
-    sink_map = run_ladder("map", cfg, rows, [] { return OrderBook<MapLadder>{}; });
+    sink_map = run_ladder("map", cfg, rows,
+                          [] { return OrderBook<MapLadder, OpenAddressIdMap>{}; });
+  }
+  // Same ladder, different id map: isolates the M1.5 change.
+  if (cfg.run_stdmap_id) {
+    run_ladder("d+std", cfg, rows,
+               [] { return OrderBook<DenseLadder, StdIdMap>{kDenseMin, kDenseMax}; });
+  }
+  // Same code, same id map, only the ladder's price range differs.
+  if (cfg.run_tight) {
+    run_ladder("tight", cfg, rows, [] {
+      return OrderBook<DenseLadder, OpenAddressIdMap>{kTightMin, kTightMax};
+    });
+  }
+  if (cfg.run_adversarial) {
+    if (cfg.run_dense) {
+      run_adversarial("dense", cfg, rows, [] {
+        return OrderBook<DenseLadder, OpenAddressIdMap>{kDenseMin, kDenseMax};
+      });
+    }
+    if (cfg.run_map) {
+      run_adversarial("map", cfg, rows,
+                      [] { return OrderBook<MapLadder, OpenAddressIdMap>{}; });
+    }
   }
   print_rows(rows, tpn);
   std::printf("\nstate fingerprints (optimizer sink): dense %016" PRIx64 ", map %016" PRIx64

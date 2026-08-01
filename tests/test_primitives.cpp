@@ -121,7 +121,7 @@ TEST_CASE("order pool reuses released nodes and resets them") {
   pool.release(a);
   Order* c = pool.alloc();
   CHECK(c == a);  // LIFO recycling
-  CHECK(pool.allocated() == 2);
+  CHECK(pool.allocated() == 2);  // recycled, not grown
   CHECK(c->id == 0);
   CHECK(c->qty == 0);
   CHECK(c->next == nullptr);
