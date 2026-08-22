@@ -70,6 +70,11 @@ class OrderBook {
     std::uint64_t added_qty = 0;
     std::uint64_t traded_qty = 0;
     std::uint64_t canceled_qty = 0;
+    // Quantity removed by a feed-driven execution (see execute_resting).
+    // Counted separately from traded_qty because it consumes only ONE side:
+    // when replaying a market-data feed the aggressor never entered this
+    // book, so it contributes nothing to added_qty.
+    std::uint64_t executed_qty = 0;
   };
 
   template <class... LadderArgs>
@@ -154,6 +159,38 @@ class OrderBook {
     cancel_open(o);
     return Result::Ok;
   }
+
+  // --- feed reconstruction ---------------------------------------------
+  //
+  // These exist for rebuilding a book from a market-data feed, where the
+  // exchange has ALREADY matched everything. Running such a stream through
+  // add_limit() would be wrong: a resting order that appears to cross would
+  // trade against the book a second time and the reconstruction would
+  // diverge from the real book immediately.
+
+  // Rest an order without matching, whatever the price implies.
+  Result insert_passive(OrderId id, Side side, Price price, Qty qty) {
+    if (const Result r = validate(id, price, qty); r != Result::Ok) return r;
+    counters_.added_qty += qty;
+    rest(id, side, price, qty);
+    return Result::Ok;
+  }
+
+  // Remove `qty` shares from a resting order because the feed reported a
+  // trade against it. Removing the whole remaining quantity deletes the
+  // order. Quantity larger than the remainder is clamped, and reported.
+  Result execute_resting(OrderId id, Qty qty, Qty* executed = nullptr) {
+    return consume(id, qty, /*is_execution=*/true, executed);
+  }
+
+  // Remove `qty` shares because the feed reported a partial cancel.
+  Result reduce_resting(OrderId id, Qty qty, Qty* removed = nullptr) {
+    return consume(id, qty, /*is_execution=*/false, removed);
+  }
+
+  // Price and side of a resting order, for feed handlers that must know them
+  // (an ITCH replace repeats neither).
+  [[nodiscard]] const Order* find_order(OrderId id) const { return orders_.find(id); }
 
   template <class OnExec>
   Result replace(OrderId old_id, OrderId new_id, Price new_price, Qty new_qty,
@@ -283,6 +320,34 @@ class OrderBook {
     o->side = side;
     lvl->push_back(o);
     orders_.insert(id, o);
+  }
+
+  // Shared body of execute_resting / reduce_resting.
+  Result consume(OrderId id, Qty qty, bool is_execution, Qty* out) {
+    if (out != nullptr) *out = 0;
+    Order* o = orders_.find(id);
+    if (o == nullptr) return Result::RejectedUnknownId;
+    if (qty == 0) return Result::RejectedBadQty;
+    // A well-formed feed never over-consumes an order, but a truncated or
+    // filtered stream can, so clamp rather than underflow the quantity.
+    const Qty take = qty < o->qty ? qty : o->qty;
+    if (out != nullptr) *out = take;
+    if (is_execution) {
+      counters_.executed_qty += take;
+    } else {
+      counters_.canceled_qty += take;
+    }
+    Level* lvl = o->level;
+    if (take == o->qty) {
+      const Side side = o->side;
+      lvl->remove(o);
+      orders_.erase(o->id);
+      pool_.release(o);
+      if (lvl->order_count == 0) ladder_.on_level_empty(side, lvl);
+    } else {
+      lvl->reduce(o, take);
+    }
+    return Result::Ok;
   }
 
   void cancel_open(Order* o) {

@@ -22,7 +22,9 @@ add_executable(pricetime_tests
   test_id_map.cpp
   test_properties.cpp
   test_reference_diff.cpp
-  test_alloc.cpp)
+  test_alloc.cpp
+  test_itch.cpp
+  test_itch_replay.cpp)
 
 target_link_libraries(pricetime_tests
   PRIVATE pricetime::pricetime pricetime_warnings doctest::doctest)
