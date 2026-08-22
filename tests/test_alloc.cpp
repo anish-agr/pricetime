@@ -33,20 +33,51 @@ std::uint64_t rng(std::uint64_t& s) {
   return z ^ (z >> 31);
 }
 
+void* volatile g_escape_sink = nullptr;
+
+// Round-trips a pointer through a volatile so the optimizer must treat the
+// allocation behind it as observable and cannot elide it. The value is read
+// back as well as written, since a write-only sink trips
+// -Wunused-but-set-variable.
+bool escape(void* p) {
+  g_escape_sink = p;
+  return g_escape_sink == p;
+}
+
 }  // namespace
 
 TEST_CASE("the allocation counter itself works") {
-  AllocGuard guard;
-  auto* p = new int(7);
-  CHECK(guard.allocations() == 1);
-  CHECK(guard.bytes() >= sizeof(int));
-  delete p;
+  // A new-expression is NOT a reliable way to provoke an allocation: C++14
+  // ([expr.new]/10, N3664) lets an implementation omit calls to a replaceable
+  // allocation function, and GCC at -O2 duly deletes a local new/delete pair
+  // outright — this test failed on GCC while passing on MSVC for exactly that
+  // reason. Calling the allocation function directly and letting the pointer
+  // escape leaves nothing to elide.
+  std::size_t counted = 0;
+  std::size_t counted_bytes = 0;
+  bool escaped = false;
+  {
+    AllocGuard guard;
+    void* p = ::operator new(64);
+    escaped = escape(p);
+    // Sampled before any doctest macro runs, since asserting is not
+    // guaranteed to be allocation-free itself.
+    counted = guard.allocations();
+    counted_bytes = guard.bytes();
+    ::operator delete(p);
+  }
+  CHECK(escaped);
+  CHECK(counted == 1);
+  CHECK(counted_bytes >= 64);
+
+  std::size_t quiet_count = 0;
   {
     AllocGuard quiet;
     volatile int x = 1;
     (void)x;
-    CHECK(quiet.allocations() == 0);
+    quiet_count = quiet.allocations();
   }
+  CHECK(quiet_count == 0);
 }
 
 // The headline claim: with the dense ladder and the open-addressing id map,
