@@ -180,13 +180,10 @@ real defect. The order pool's free list was a `std::vector<Order*>`, so the
 free list itself allocated while handing out recycled memory. That is now an
 intrusive chain, and the test enforces it.
 
-## 6. Deliberate limitations (M1)
+## 6. Deliberate limitations
 
-- **Single-threaded.** Concurrency is M3's explicit design problem, not a
-  premature optimization here.
-- **Single-symbol.** A real feed is multi-symbol; M2 will need a symbol →
-  book map, and the per-symbol memory cost is exactly what makes the dense
-  ladder's range bound a live question.
+- **The book is single-threaded.** The SPSC queue exists (section 8) but the
+  matching engine is not yet driven across threads.
 - **No in-place modify.** `replace` is ITCH-style cancel-and-reenter, so it
   always loses time priority. An OUCH-style quantity reduction that keeps
   priority is a real order type and is not implemented.
@@ -196,11 +193,119 @@ intrusive chain, and the test enforces it.
 - **No self-trade prevention, no auctions, no halts, no odd-lot rules.** Real
   exchanges have all of these.
 
-## 7. Open questions for M2
+## 7. Feed reconstruction (M2)
 
-- Does the ladder comparison change under real ITCH order-flow, where level
+Rebuilding a book from ITCH is not the same problem as matching, and
+conflating the two is the mistake that makes a replay engine silently wrong.
+
+The exchange has already run its matching engine. Every message describes the
+book that *resulted*. So an Add Order message must rest passively even when
+its price appears to cross: on a live feed a crossing add generally means the
+opposite side was consumed by a message that has not been applied yet, and
+re-matching it locally would remove liquidity the real book still had. The
+book therefore grew a separate entry path — `insert_passive()`,
+`execute_resting()`, `reduce_resting()` — used only by feed replay.
+
+Accounting had to change with it. Internal matching consumes both sides of a
+trade, so `added = 2*traded + canceled + resting`. A feed execution consumes
+only the resting side, because the aggressor never entered this book at all.
+Rather than blur the two, `Counters` tracks `executed_qty` separately from
+`traded_qty`, and reconstruction conserves as
+`added = executed + canceled + resting`.
+
+Three further details carry real weight:
+
+- **Routing.** Execute, cancel, delete, and replace messages carry only an
+  order reference — no symbol. Reconstruction therefore needs a global
+  order-to-book index, which is why `MultiBook` owns one. The alternative,
+  searching every symbol's book, is O(symbols) per message on the hottest path
+  in the system.
+- **Replace has no side.** The message gives an old reference, a new
+  reference, a price, and a size. The side must be read off the original order
+  before it is destroyed.
+- **'P' must not touch the book.** Non-cross trade messages report trades of
+  non-displayed liquidity. Applying them double-counts volume that was never
+  in the book.
+
+The framing reader advances on the length prefix and uses the spec's length
+table only as a cross-check. That ordering means a file containing message
+types added to the spec after this code was written still parses instead of
+desynchronizing; a disagreement on a *known* type is fatal, because that
+indicates genuine misalignment and everything after it would be plausible
+nonsense.
+
+`replay_itch` checks two things a correct reconstruction must satisfy: no
+crossed book, and share conservation per symbol. The crossed-book check
+immediately earned its place by failing — not on the replayer, but on the
+synthetic generator, which was pricing every replace on the bid side
+regardless of the original order's side.
+
+**The honest gap:** none of this has been run against a real NASDAQ capture
+yet. The encoder and decoder were written independently from the published
+spec, so their agreement is meaningful evidence — but two independent
+implementations can still share a misreading of the same document, and only
+real data settles it.
+
+## 8. Concurrency (M3)
+
+The SPSC queue is the only lock-free code in the repo, and the only component
+whose correctness a single-threaded test genuinely cannot establish.
+
+Its three load-bearing details are memory ordering (release on publish,
+acquire on consume — anything weaker compiles, runs, and tears data on a
+weakly ordered machine), cache-line separation of the producer and consumer
+indices (without which the two threads ping-pong one line and throughput
+collapses with no visible bug), and each side caching the other's index so the
+common path reads no shared line at all.
+
+Correctness is argued three ways: a two-thread stress test whose Gauss-sum
+checksum detects any loss, duplication, or reordering; a multi-word payload
+test where torn publication would appear as mismatched fields; and a
+ThreadSanitizer build in CI.
+
+The third of those is only worth anything because it was mutation-tested.
+Relaxing every release/acquire to relaxed makes TSan report a data race at the
+slot read — exactly where the reasoning says it must. A sanitizer that has
+never been observed failing for the right reason is not evidence.
+
+## 9. Strategy measurement (M4)
+
+The sandbox exists to measure *why* a naive quoter loses money, not to claim
+one makes money.
+
+P&L is accumulated in integers — cash in price-ticks times shares — and
+converted to dollars only when printed. Across hundreds of thousands of fills
+a double loses cents to rounding, and cents are the entire margin of a
+market-making strategy. Inventory marks to the mid rather than the last trade,
+so a single print on the far side cannot flatter the result, and realized and
+unrealized are reported separately, because a strategy that looks profitable
+while accumulating inventory is usually just short volatility and has not paid
+for it yet.
+
+The measurement that actually matters is the **markout**: where the mid went
+1ms, 10ms, 100ms, and 1s after each fill, signed by the direction of the
+position taken. Spread captured minus adverse move is the real edge. Reporting
+capture alone is precisely how a losing strategy looks busy and profitable.
+
+The first fill model was wrong in an instructive way: it filled the strategy
+when the *book* crossed its quote, which never happens in a well-formed book,
+so the sandbox reported zero fills over three million messages. A passive
+quote is filled when a trade *prints* at or through its price — which means
+reading the resting order's side and price off an execution message before the
+replayer consumes it.
+
+What the model still does not do is model queue position, and that is the
+single largest determinant of a passive strategy's real P&L. Every print at or
+through our price fills us, where a real order waits behind everyone already
+resting at that level. The caveats print with every run rather than living in
+a comment, because a backtest whose assumptions are invisible is worse than no
+backtest.
+
+## 10. Open questions
+
+- Does the ladder comparison change under real ITCH order flow, where level
   counts and price clustering are set by the market rather than by a uniform
-  generator?
+  generator? This is the first thing to check once a real capture is in hand.
 - What is the actual active-level count per symbol on a full NASDAQ day, and
   does that make the dense ladder's range bound affordable per symbol?
 - How much of the ~175 ns per operation is cache miss versus work? The next

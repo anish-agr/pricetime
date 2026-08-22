@@ -33,6 +33,17 @@ jobs:
         if: runner.os == 'Linux' && matrix.config == 'Release'
         run: ./build/bench/pricetime_bench --ops 2000 --core -1
 
+      # End-to-end: generate a synthetic ITCH file, rebuild books from it, and
+      # run the strategy sandbox over it. replay_itch exits non-zero if the
+      # parse fails or any reconstructed book is crossed, so this is a real
+      # assertion about the whole pipeline, not just a smoke test.
+      - name: Pipeline end-to-end
+        if: runner.os == 'Linux' && matrix.config == 'Release'
+        run: |
+          ./build/tools/gen_itch /tmp/ci.itch --messages 200000
+          ./build/tools/replay_itch /tmp/ci.itch --depth 3
+          ./build/tools/mm_sandbox /tmp/ci.itch --symbol AAPL --half-spread 1
+
   sanitizers:
     name: ubuntu / asan+ubsan
     runs-on: ubuntu-latest
