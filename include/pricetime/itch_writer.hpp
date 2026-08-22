@@ -5,24 +5,24 @@
 #include <string>
 #include <vector>
 
-#include "pricetime/itch.hpp"
 #include "pricetime/symbol.hpp"
+#include "pricetime/types.hpp"
 
-namespace pricetime::test {
+namespace pricetime::itch {
 
 // Builds well-formed ITCH 5.0 BinaryFILE bytes in memory.
 //
-// This exists so the parser, the replayer, and the throughput benchmark are
-// all testable without a multi-gigabyte download. It is written as an
-// *encoder* — independently from the decoder, big-endian by hand — so a
-// round-trip test is a real check rather than two copies of the same
-// misunderstanding. The reference for both is the published spec, not each
-// other.
+// Written as an encoder independent of the decoder — big-endian assembled by
+// hand, from the spec rather than from itch.hpp — so agreement between the
+// two is evidence about the specification rather than two copies of one
+// misunderstanding.
 //
-// It also lets tests construct situations a captured file might not contain
-// on the day you happen to download it: an order deleted twice, a replace
-// chain, an execution that empties a level.
-class ItchWriter {
+// It earns its place in the library rather than the tests for three reasons:
+// it makes the whole pipeline testable without a multi-gigabyte download, it
+// can construct situations a captured day may not contain (replace chains,
+// executions that empty a level, over-consumption), and M3's market-data
+// feed needs to emit ITCH-shaped events anyway.
+class Writer {
  public:
   [[nodiscard]] const std::vector<std::uint8_t>& bytes() const noexcept { return buf_; }
   [[nodiscard]] std::size_t message_count() const noexcept { return count_; }
@@ -204,4 +204,4 @@ class ItchWriter {
   std::size_t msg_len_ = 0;
 };
 
-}  // namespace pricetime::test
+}  // namespace pricetime::itch

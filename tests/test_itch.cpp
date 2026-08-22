@@ -3,14 +3,14 @@
 #include <cstdint>
 #include <vector>
 
-#include "itch_synth.hpp"
 #include "pricetime/itch.hpp"
 #include "pricetime/itch_reader.hpp"
+#include "pricetime/itch_writer.hpp"
 #include "pricetime/symbol.hpp"
 
 using namespace pricetime;
 using namespace pricetime::itch;
-using pricetime::test::ItchWriter;
+using pricetime::itch::Writer;
 
 TEST_CASE("big-endian readers assemble fields correctly") {
   const std::uint8_t bytes[8] = {0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08};
@@ -61,7 +61,7 @@ TEST_CASE("message lengths match the ITCH 5.0 specification") {
 // The writer encodes big-endian by hand and the decoder decodes it
 // independently; agreement between them is evidence both match the spec.
 TEST_CASE("add order round-trips through encode and decode") {
-  ItchWriter w;
+  Writer w;
   w.add_order(1234567890123ull, 42, Side::Ask, 500, Symbol("MSFT"), 4212500);
   const auto& b = w.bytes();
   REQUIRE(b.size() == 2 + 36);
@@ -77,7 +77,7 @@ TEST_CASE("add order round-trips through encode and decode") {
 }
 
 TEST_CASE("every message type round-trips") {
-  ItchWriter w;
+  Writer w;
   const Symbol sym("TSLA");
   w.system_event(1, 'Q');
   w.stock_directory(2, sym);
@@ -110,14 +110,14 @@ TEST_CASE("every message type round-trips") {
 }
 
 TEST_CASE("executed-with-price carries its own price, plain executed does not") {
-  ItchWriter w;
+  Writer w;
   w.order_executed(5, 100, 50, 900);
   const OrderExecuted plain = decode_order_executed(w.bytes().data() + 2);
   CHECK_FALSE(plain.has_price);
   CHECK(plain.shares == 50);
   CHECK(plain.match_number == 900);
 
-  ItchWriter w2;
+  Writer w2;
   w2.order_executed_with_price(6, 101, 25, 901, false, 123400);
   const OrderExecuted priced = decode_order_executed(w2.bytes().data() + 2);
   CHECK(priced.has_price);
@@ -127,7 +127,7 @@ TEST_CASE("executed-with-price carries its own price, plain executed does not") 
 }
 
 TEST_CASE("replace decodes both references without repeating the side") {
-  ItchWriter w;
+  Writer w;
   w.order_replace(8, 500, 501, 400, 1020000);
   const OrderReplace m = decode_order_replace(w.bytes().data() + 2);
   CHECK(m.original_reference == 500);
@@ -137,7 +137,7 @@ TEST_CASE("replace decodes both references without repeating the side") {
 }
 
 TEST_CASE("reader rejects a truncated file instead of reading past the end") {
-  ItchWriter w;
+  Writer w;
   w.add_order(1, 1, Side::Bid, 100, Symbol("AAPL"), 1000);
   w.add_order(2, 2, Side::Bid, 100, Symbol("AAPL"), 1000);
   auto bytes = w.bytes();
@@ -162,7 +162,7 @@ TEST_CASE("reader rejects a truncated file instead of reading past the end") {
 // A framing length that disagrees with the spec means the stream is
 // misaligned; continuing would produce plausible-looking garbage.
 TEST_CASE("reader catches a framing length that contradicts the spec") {
-  ItchWriter w;
+  Writer w;
   w.add_order(1, 1, Side::Bid, 100, Symbol("AAPL"), 1000);
   auto bytes = w.bytes();
   bytes[1] = 35;  // claim 35 bytes for a type that must be 36
@@ -179,7 +179,7 @@ TEST_CASE("reader catches a framing length that contradicts the spec") {
 // Forward compatibility: a type this build does not know about still parses,
 // because the framing length — not the table — advances the cursor.
 TEST_CASE("framed reader skips unknown message types without desynchronizing") {
-  ItchWriter w;
+  Writer w;
   w.add_order(1, 1, Side::Bid, 100, Symbol("AAPL"), 1000);
   auto bytes = w.bytes();
   // Append a hypothetical future message: 10 bytes, type 'z'.
@@ -187,7 +187,7 @@ TEST_CASE("framed reader skips unknown message types without desynchronizing") {
   bytes.push_back(10);
   bytes.push_back(static_cast<std::uint8_t>('z'));
   for (int i = 0; i < 9; ++i) bytes.push_back(0);
-  ItchWriter w2;
+  Writer w2;
   w2.order_delete(2, 1);
   for (std::uint8_t b : w2.bytes()) bytes.push_back(b);
 
@@ -215,7 +215,7 @@ TEST_CASE("raw reader treats an unknown type as fatal") {
 }
 
 TEST_CASE("raw reader walks an unframed stream using spec lengths") {
-  ItchWriter w;
+  Writer w;
   w.add_order(1, 1, Side::Bid, 100, Symbol("AAPL"), 1000);
   w.order_delete(2, 1);
   // Strip the 2-byte prefixes to build an unframed stream.

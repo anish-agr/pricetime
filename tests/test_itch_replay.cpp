@@ -3,8 +3,8 @@
 #include <cstdint>
 #include <vector>
 
-#include "itch_synth.hpp"
 #include "pricetime/itch_reader.hpp"
+#include "pricetime/itch_writer.hpp"
 #include "pricetime/itch_replay.hpp"
 #include "pricetime/ladder_dense.hpp"
 #include "pricetime/ladder_map.hpp"
@@ -12,13 +12,13 @@
 
 using namespace pricetime;
 using namespace pricetime::itch;
-using pricetime::test::ItchWriter;
+using pricetime::itch::Writer;
 
 namespace {
 
 // Runs a synthetic file through the framing reader into a replayer.
 template <class Ladder>
-ReadResult drive(Replayer<Ladder>& rep, const ItchWriter& w) {
+ReadResult drive(Replayer<Ladder>& rep, const Writer& w) {
   return for_each_framed_message(
       w.bytes().data(), w.bytes().size(),
       [&](const std::uint8_t* m, std::size_t len) { rep.apply(m, len); });
@@ -32,7 +32,7 @@ const Symbol kMsft{"MSFT"};
 TEST_CASE("replay builds a two-sided book from adds") {
   MultiBook<MapLadder> books;
   Replayer<MapLadder> rep(books);
-  ItchWriter w;
+  Writer w;
   w.system_event(1, 'Q');
   w.add_order(10, 1, Side::Bid, 100, kAapl, 1000000);
   w.add_order(11, 2, Side::Bid, 200, kAapl, 999900);
@@ -57,7 +57,7 @@ TEST_CASE("replay builds a two-sided book from adds") {
 TEST_CASE("a crossing add rests instead of matching") {
   MultiBook<MapLadder> books;
   Replayer<MapLadder> rep(books);
-  ItchWriter w;
+  Writer w;
   w.add_order(1, 1, Side::Ask, 100, kAapl, 1000000);
   w.add_order(2, 2, Side::Bid, 100, kAapl, 1000000);  // same price, would cross
   REQUIRE(drive(rep, w).ok());
@@ -72,7 +72,7 @@ TEST_CASE("a crossing add rests instead of matching") {
 TEST_CASE("execution reduces the resting order and removes it when exhausted") {
   MultiBook<MapLadder> books;
   Replayer<MapLadder> rep(books);
-  ItchWriter w;
+  Writer w;
   w.add_order(1, 1, Side::Bid, 100, kAapl, 1000000);
   w.order_executed(2, 1, 40, 5001);
   REQUIRE(drive(rep, w).ok());
@@ -83,7 +83,7 @@ TEST_CASE("execution reduces the resting order and removes it when exhausted") {
   CHECK(book->counters().executed_qty == 40);
   CHECK(books.tracked_orders() == 1);
 
-  ItchWriter w2;
+  Writer w2;
   w2.order_executed(3, 1, 60, 5002);
   REQUIRE(drive(rep, w2).ok());
   CHECK(book->best(Side::Bid) == nullptr);
@@ -95,7 +95,7 @@ TEST_CASE("execution reduces the resting order and removes it when exhausted") {
 TEST_CASE("executed-with-price affects the book exactly like a plain execution") {
   MultiBook<MapLadder> books;
   Replayer<MapLadder> rep(books);
-  ItchWriter w;
+  Writer w;
   w.add_order(1, 1, Side::Bid, 100, kAapl, 1000000);
   // Non-printable, and priced away from the order's own price: neither
   // changes what happens to the resting quantity.
@@ -110,7 +110,7 @@ TEST_CASE("executed-with-price affects the book exactly like a plain execution")
 TEST_CASE("partial cancel reduces, delete removes") {
   MultiBook<MapLadder> books;
   Replayer<MapLadder> rep(books);
-  ItchWriter w;
+  Writer w;
   w.add_order(1, 1, Side::Ask, 500, kAapl, 1000100);
   w.order_cancel(2, 1, 200);
   REQUIRE(drive(rep, w).ok());
@@ -119,7 +119,7 @@ TEST_CASE("partial cancel reduces, delete removes") {
   CHECK(book->best(Side::Ask)->total_qty == 300);
   CHECK(book->counters().canceled_qty == 200);
 
-  ItchWriter w2;
+  Writer w2;
   w2.order_delete(3, 1);
   REQUIRE(drive(rep, w2).ok());
   CHECK(book->best(Side::Ask) == nullptr);
@@ -132,7 +132,7 @@ TEST_CASE("partial cancel reduces, delete removes") {
 TEST_CASE("replace preserves the side and applies the new price and size") {
   MultiBook<MapLadder> books;
   Replayer<MapLadder> rep(books);
-  ItchWriter w;
+  Writer w;
   w.add_order(1, 1, Side::Ask, 500, kAapl, 1000100);
   w.order_replace(2, 1, 2, 300, 1000200);
   REQUIRE(drive(rep, w).ok());
@@ -146,7 +146,7 @@ TEST_CASE("replace preserves the side and applies the new price and size") {
   CHECK(rep.stats().replaces == 1);
 
   // The old reference is gone; the new one is routable.
-  ItchWriter w2;
+  Writer w2;
   w2.order_delete(3, 2);
   REQUIRE(drive(rep, w2).ok());
   CHECK(book->open_orders() == 0);
@@ -155,7 +155,7 @@ TEST_CASE("replace preserves the side and applies the new price and size") {
 TEST_CASE("a chain of replaces stays consistent") {
   MultiBook<MapLadder> books;
   Replayer<MapLadder> rep(books);
-  ItchWriter w;
+  Writer w;
   w.add_order(1, 1, Side::Bid, 100, kAapl, 1000000);
   w.order_replace(2, 1, 2, 90, 1000010);
   w.order_replace(3, 2, 3, 80, 1000020);
@@ -174,7 +174,7 @@ TEST_CASE("a chain of replaces stays consistent") {
 TEST_CASE("non-cross trade messages never touch the book") {
   MultiBook<MapLadder> books;
   Replayer<MapLadder> rep(books);
-  ItchWriter w;
+  Writer w;
   w.add_order(1, 1, Side::Bid, 100, kAapl, 1000000);
   w.trade_non_cross(2, 999, Side::Bid, 50, kAapl, 1000000, 7001);
   REQUIRE(drive(rep, w).ok());
@@ -189,7 +189,7 @@ TEST_CASE("non-cross trade messages never touch the book") {
 TEST_CASE("administrative messages are skipped without disturbing the book") {
   MultiBook<MapLadder> books;
   Replayer<MapLadder> rep(books);
-  ItchWriter w;
+  Writer w;
   w.stock_directory(1, kAapl);
   w.stock_trading_action(2, kAapl, 'T');
   w.add_order(3, 1, Side::Bid, 100, kAapl, 1000000);
@@ -202,7 +202,7 @@ TEST_CASE("administrative messages are skipped without disturbing the book") {
 TEST_CASE("multi-symbol: books stay independent and ids route correctly") {
   MultiBook<MapLadder> books;
   Replayer<MapLadder> rep(books);
-  ItchWriter w;
+  Writer w;
   w.add_order(1, 1, Side::Bid, 100, kAapl, 1000000);
   w.add_order(2, 2, Side::Bid, 200, kMsft, 4000000);
   w.add_order(3, 3, Side::Ask, 300, kAapl, 1000100);
@@ -224,7 +224,7 @@ TEST_CASE("symbol filter tracks only what was asked for") {
   MultiBook<MapLadder> books;
   Replayer<MapLadder> rep(books);
   rep.track_only({kAapl});
-  ItchWriter w;
+  Writer w;
   w.add_order(1, 1, Side::Bid, 100, kAapl, 1000000);
   w.add_order(2, 2, Side::Bid, 200, kMsft, 4000000);
   w.order_delete(3, 2);  // refers to a filtered-out order
@@ -242,7 +242,7 @@ TEST_CASE("symbol filter tracks only what was asked for") {
 TEST_CASE("over-consumption is clamped and counted, not allowed to underflow") {
   MultiBook<MapLadder> books;
   Replayer<MapLadder> rep(books);
-  ItchWriter w;
+  Writer w;
   w.add_order(1, 1, Side::Bid, 100, kAapl, 1000000);
   w.order_executed(2, 1, 250, 5001);  // more than is resting
   REQUIRE(drive(rep, w).ok());
@@ -263,7 +263,7 @@ TEST_CASE_TEMPLATE("share conservation holds across a replayed session", L, MapL
   }();
   Replayer<L> rep(books);
 
-  ItchWriter w;
+  Writer w;
   w.system_event(1, 'Q');
   std::uint64_t ts = 10;
   OrderId ref = 1;

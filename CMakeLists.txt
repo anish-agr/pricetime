@@ -7,6 +7,7 @@ project(pricetime
 
 option(PRICETIME_BUILD_TESTS "Build unit and property tests" ON)
 option(PRICETIME_BUILD_BENCH "Build latency benchmarks" ON)
+option(PRICETIME_BUILD_TOOLS "Build command-line tools" ON)
 option(PRICETIME_WERROR "Treat warnings as errors" OFF)
 option(PRICETIME_SANITIZE "Build with address and undefined-behavior sanitizers" OFF)
 
@@ -49,4 +50,8 @@ endif()
 
 if(PRICETIME_BUILD_BENCH)
   add_subdirectory(bench)
+endif()
+
+if(PRICETIME_BUILD_TOOLS)
+  add_subdirectory(tools)
 endif()
