@@ -19,6 +19,10 @@ struct AllocStats {
   std::size_t bytes = 0;
 };
 
+// Snapshot of the counters. Reading is relaxed: the guards below are only
+// ever used from a single thread, and the counters exist to be compared
+// against each other rather than to synchronize anything.
+
 AllocStats alloc_stats() noexcept;
 
 // RAII window: measures allocations that happen during its lifetime.

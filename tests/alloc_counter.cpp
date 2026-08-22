@@ -3,21 +3,30 @@
 //
 // Replacing operator new/delete is standard-sanctioned ([basic.stc.dynamic]);
 // every form that could route around the counter is defined here, including
-// the sized and array variants, so nothing slips past. Counting is a plain
-// non-atomic increment: the test binary is single-threaded, and making these
-// atomic would perturb the very measurement they exist to take.
+// the sized and array variants, so nothing slips past.
+//
+// The counters are atomic with relaxed ordering. An earlier version used
+// plain increments, justified by the test binary being single-threaded --
+// which stopped being true the moment the SPSC queue tests started spawning
+// threads, and ThreadSanitizer caught the resulting race in counted_free.
+// Relaxed is sufficient: nothing here synchronizes anything, the counters are
+// only ever compared against each other, and the windows being measured are
+// single-threaded so there is no contention to perturb the measurement.
 #include "alloc_counter.hpp"
 
+#include <atomic>
 #include <cstdlib>
 #include <new>
 
 namespace {
 
-pricetime::test::AllocStats g_stats;
+std::atomic<std::size_t> g_allocations{0};
+std::atomic<std::size_t> g_deallocations{0};
+std::atomic<std::size_t> g_bytes{0};
 
 void* counted_alloc(std::size_t size) {
-  ++g_stats.allocations;
-  g_stats.bytes += size;
+  g_allocations.fetch_add(1, std::memory_order_relaxed);
+  g_bytes.fetch_add(size, std::memory_order_relaxed);
   // malloc(0) may legally return nullptr, which operator new must not do.
   void* p = std::malloc(size == 0 ? 1 : size);
   if (p == nullptr) throw std::bad_alloc();
@@ -26,7 +35,7 @@ void* counted_alloc(std::size_t size) {
 
 void counted_free(void* p) noexcept {
   if (p == nullptr) return;
-  ++g_stats.deallocations;
+  g_deallocations.fetch_add(1, std::memory_order_relaxed);
   std::free(p);
 }
 
@@ -34,7 +43,13 @@ void counted_free(void* p) noexcept {
 
 namespace pricetime::test {
 
-AllocStats alloc_stats() noexcept { return g_stats; }
+AllocStats alloc_stats() noexcept {
+  AllocStats s;
+  s.allocations = g_allocations.load(std::memory_order_relaxed);
+  s.deallocations = g_deallocations.load(std::memory_order_relaxed);
+  s.bytes = g_bytes.load(std::memory_order_relaxed);
+  return s;
+}
 
 }  // namespace pricetime::test
 
