@@ -10,6 +10,7 @@ option(PRICETIME_BUILD_BENCH "Build latency benchmarks" ON)
 option(PRICETIME_BUILD_TOOLS "Build command-line tools" ON)
 option(PRICETIME_WERROR "Treat warnings as errors" OFF)
 option(PRICETIME_SANITIZE "Build with address and undefined-behavior sanitizers" OFF)
+option(PRICETIME_TSAN "Build with the thread sanitizer" OFF)
 
 # Core: header-only, zero external dependencies.
 add_library(pricetime INTERFACE)
@@ -41,6 +42,17 @@ if(PRICETIME_SANITIZE)
   target_compile_options(pricetime_warnings INTERFACE
     -fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all)
   target_link_options(pricetime_warnings INTERFACE -fsanitize=address,undefined)
+endif()
+
+if(PRICETIME_TSAN)
+  if(MSVC)
+    message(FATAL_ERROR "PRICETIME_TSAN is only wired up for GCC/Clang")
+  endif()
+  # ASan and TSan cannot be combined, so this is a separate build.
+  # The SPSC queue is the only lock-free code here and the only thing whose
+  # correctness a single-threaded test genuinely cannot establish.
+  target_compile_options(pricetime_warnings INTERFACE -fsanitize=thread -g)
+  target_link_options(pricetime_warnings INTERFACE -fsanitize=thread)
 endif()
 
 if(PRICETIME_BUILD_TESTS)

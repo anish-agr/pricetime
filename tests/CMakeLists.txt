@@ -24,9 +24,12 @@ add_executable(pricetime_tests
   test_reference_diff.cpp
   test_alloc.cpp
   test_itch.cpp
-  test_itch_replay.cpp)
+  test_itch_replay.cpp
+  test_spsc.cpp)
+
+find_package(Threads REQUIRED)
 
 target_link_libraries(pricetime_tests
-  PRIVATE pricetime::pricetime pricetime_warnings doctest::doctest)
+  PRIVATE pricetime::pricetime pricetime_warnings doctest::doctest Threads::Threads)
 
 add_test(NAME pricetime_tests COMMAND pricetime_tests)

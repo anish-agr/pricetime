@@ -52,3 +52,28 @@ jobs:
         env:
           ASAN_OPTIONS: detect_leaks=1:abort_on_error=1
           UBSAN_OPTIONS: print_stacktrace=1
+
+  thread-sanitizer:
+    name: ubuntu / tsan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The SPSC queue between the network and matching threads is the only
+      # lock-free code in the repo. Its memory ordering cannot be validated by
+      # a single-threaded test, so it gets its own sanitizer build. Relaxing
+      # the release/acquire pairing makes this job fail, which is how we know
+      # the check has teeth.
+      - name: Configure
+        run: >
+          cmake -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          -DPRICETIME_TSAN=ON -DPRICETIME_WERROR=ON -DPRICETIME_BUILD_BENCH=OFF
+          -DPRICETIME_BUILD_TOOLS=OFF
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+        env:
+          TSAN_OPTIONS: halt_on_error=1
