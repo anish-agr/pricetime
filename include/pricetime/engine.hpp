@@ -13,6 +13,7 @@
 #include "pricetime/id_map.hpp"
 #include "pricetime/itch_writer.hpp"
 #include "pricetime/ladder_map.hpp"
+#include "pricetime/moldudp64.hpp"
 #include "pricetime/net.hpp"
 #include "pricetime/spsc_queue.hpp"
 #include "pricetime/symbol.hpp"
@@ -395,13 +396,15 @@ class Engine {
     send_done_.store(true, std::memory_order_release);
   }
 
-  // --- stage 4: md queue -> UDP ------------------------------------------
+  // --- stage 4: md queue -> MoldUDP64 over UDP ---------------------------
 
   void md_loop() {
     if (cfg_.md_core >= 0) {
       pin_current_thread(cfg_.md_core);
       raise_priority();
     }
+    mold::Packer packer;
+    std::uint64_t seq = 1;
     MdMsg m;
     for (;;) {
       if (!q_md_.try_pop(m)) {
@@ -409,7 +412,27 @@ class Engine {
         std::this_thread::yield();
         continue;
       }
-      if (md_out_.send(m.bytes, m.len)) ++stats_.md_datagrams;
+      // One message per packet: latency over packing density. A throughput-
+      // oriented feed would batch messages already queued, the same trade
+      // the TCP send thread makes; the sequence numbers make either policy
+      // safe for receivers.
+      packer.begin(seq);
+      // The md queue carries framed messages (2-byte length + payload) as
+      // the ITCH writer produces them; Mold blocks are framed the same way,
+      // so the payload goes in without the writer's own prefix.
+      const std::size_t framed_len = static_cast<std::size_t>(m.len);
+      if (framed_len >= 2) {
+        const bool ok = packer.add(m.bytes + 2, framed_len - 2);
+        if (ok) {
+          packer.seal();
+          seq += packer.count();
+          if (md_out_.send(packer.bytes(), packer.size())) ++stats_.md_datagrams;
+        }
+      }
+    }
+    packer.seal_end_of_session(seq);
+    if (cfg_.md_port != 0 && md_out_.send(packer.bytes(), packer.size())) {
+      ++stats_.md_datagrams;
     }
   }
 

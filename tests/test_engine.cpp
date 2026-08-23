@@ -7,6 +7,7 @@
 #include "pricetime/itch_reader.hpp"
 #include "pricetime/itch_replay.hpp"
 #include "pricetime/ladder_map.hpp"
+#include "pricetime/moldudp64.hpp"
 #include "pricetime/multi_book.hpp"
 #include "pricetime/net.hpp"
 #include "pricetime/wire.hpp"
@@ -201,19 +202,30 @@ TEST_CASE("engine loopback: full session over real sockets") {
   CHECK(engine.book_after_shutdown().counters().traded_qty == 40);
 
   // The feed said everything the book did, so a book rebuilt purely from the
-  // UDP datagrams must fingerprint identically to the engine's own.
+  // MoldUDP64 stream must fingerprint identically to the engine's own — and
+  // the sequence numbers must account for every message with no gaps.
   MultiBook<MapLadder> md_books;
   itch::Replayer<MapLadder> md_rep(md_books);
-  std::uint8_t dgram[128];
+  mold::GapTracker gaps;
+  bool saw_end = false;
+  std::uint8_t dgram[1500];
   for (;;) {
     const int n = md_rx.recv(dgram, sizeof(dgram), 300);
     if (n <= 0) break;
-    const auto rr = itch::for_each_framed_message(
-        dgram, static_cast<std::size_t>(n),
-        [&](const std::uint8_t* m, std::size_t len) { md_rep.apply(m, len); });
-    REQUIRE(rr.ok());
+    mold::Header hdr;
+    REQUIRE(mold::unpack(dgram, static_cast<std::size_t>(n), hdr,
+                         [&](std::uint64_t, const std::uint8_t* m, std::size_t len) {
+                           md_rep.apply(m, len);
+                         }));
+    gaps.on_packet(hdr);
+    if (hdr.count == mold::kEndOfSession) {
+      saw_end = true;
+      break;
+    }
   }
   CHECK(engine.stats().md_datagrams > 0);
+  CHECK(gaps.total_missed() == 0);
+  CHECK(saw_end);
   const auto* md_book = md_books.find(Symbol("TEST"));
   REQUIRE(md_book != nullptr);
   CHECK(md_book->state_hash() == engine.book_after_shutdown().state_hash());
@@ -289,18 +301,23 @@ TEST_CASE("engine loopback: sustained two-sided flow keeps engine and feed in ag
   CHECK(engine.stats().requests == kOrders + 1);  // + the flush sentinel
   CHECK(engine.stats().responses == responses);
 
-  // Drain the feed and compare.
+  // Drain the Mold stream and compare.
   MultiBook<MapLadder> md_books;
   itch::Replayer<MapLadder> md_rep(md_books);
-  std::uint8_t dgram[128];
+  mold::GapTracker gaps;
+  std::uint8_t dgram[1500];
   for (;;) {
     const int n = md_rx.recv(dgram, sizeof(dgram), 300);
     if (n <= 0) break;
-    const auto rr = itch::for_each_framed_message(
-        dgram, static_cast<std::size_t>(n),
-        [&](const std::uint8_t* m, std::size_t len) { md_rep.apply(m, len); });
-    REQUIRE(rr.ok());
+    mold::Header hdr;
+    REQUIRE(mold::unpack(dgram, static_cast<std::size_t>(n), hdr,
+                         [&](std::uint64_t, const std::uint8_t* m, std::size_t len) {
+                           md_rep.apply(m, len);
+                         }));
+    gaps.on_packet(hdr);
+    if (hdr.count == mold::kEndOfSession) break;
   }
+  CHECK(gaps.total_missed() == 0);
   const auto* md_book = md_books.find(Symbol("TEST"));
   REQUIRE(md_book != nullptr);
   CHECK(md_book->state_hash() == engine.book_after_shutdown().state_hash());

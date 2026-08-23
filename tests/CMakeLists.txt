@@ -28,7 +28,8 @@ add_executable(pricetime_tests
   test_spsc.cpp
   test_market_maker.cpp
   test_engine.cpp
-  test_queue_position.cpp)
+  test_queue_position.cpp
+  test_moldudp64.cpp)
 
 find_package(Threads REQUIRED)
 
