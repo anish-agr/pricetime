@@ -1,217 +1,181 @@
 # pricetime
 
-A price-time-priority limit order book, NASDAQ ITCH replay engine, and
-strategy sandbox in C++20 — with latency numbers measured honestly enough to
-defend in an interview, and the worst cases published alongside the good ones.
+**A NASDAQ-grade limit order book, ITCH 5.0 replay engine, matching server, and
+strategy sandbox in C++20 — where every performance claim carries its
+methodology, and the worst cases are published next to the wins.**
+
+[![ci](https://github.com/anish-agr/pricetime/actions/workflows/ci.yml/badge.svg)](https://github.com/anish-agr/pricetime/actions/workflows/ci.yml)
+![C++20](https://img.shields.io/badge/C%2B%2B-20-blue)
+![license](https://img.shields.io/badge/license-MIT-green)
+![deps](https://img.shields.io/badge/core%20dependencies-zero-orange)
+
+```
+                     ┌─────────────────────────────────────────────────────┐
+   NASDAQ ITCH 5.0   │                     pricetime                       │
+   full-day file ────┼─► mmap ─► parser ─► MultiBook ─► strategy sandbox   │
+   (real, 3.4 GB)    │              │      (per-symbol   (exact queue-      │
+                     │              │       books)        position fills)   │
+                     │   ┌──────────┴──────────────────────────┐           │
+   order entry ──────┼─► │  matching engine (4 threads,        │ ─► ITCH   │
+   (TCP, 40-byte     │   │  SPSC queues, lock-free handoff,    │    inside │
+    binary protocol) │   │  book owned by ONE thread)          │  MoldUDP64│
+                     │   └─────────────────────────────────────┘  over UDP │
+                     └─────────────────────────────────────────────────────┘
+        core: OrderBook<Ladder, IdMap> — both policies swappable, both measured
+```
 
 ## Headline numbers
 
-Tree ladder + open-addressing id map, 1M samples per scenario, exact
-percentiles, `LFENCE`-serialized timestamps:
+1M samples per scenario, exact percentiles from full sorted sample sets,
+`LFENCE`-serialized TSC timestamps, timer overhead (13 ns) included rather
+than subtracted:
 
-| operation | p50 | p99 | p99.9 | throughput |
+| path | p50 | p99 | p99.9 | throughput |
 |---|---|---|---|---|
-| add (passive, book deepening to 1M orders) | 185 ns | 366 ns | 1.06 µs | 4.03 M/s |
-| add (steady state, ~100k resting orders) | 182 ns | 322 ns | 518 ns | 3.66 M/s* |
-| cancel (steady state) | 292 ns | 527 ns | 1.08 µs | 3.66 M/s* |
-| execute (aggressive add, one full fill) | 231 ns | 419 ns | 637 ns | 3.61 M/s |
-| **ITCH replay** (parse + full book reconstruction) | — | — | — | **1.4 M msg/s** |
-| **wire-to-wire** (TCP in → match → TCP out, loopback, busy-poll) | **13 µs** | 51 µs | ~800 µs* | **1.77 M req/s** |
+| book: add (steady state, ~100k resting orders) | 182 ns | 322 ns | 518 ns | 3.7 M ops/s |
+| book: cancel (steady state) | 292 ns | 527 ns | 1.08 µs | 3.7 M ops/s |
+| book: execute (aggressive add, one fill) | 231 ns | 419 ns | 637 ns | 3.6 M ops/s |
+| ITCH replay: parse + full book reconstruction | — | — | — | 1.45 M msg/s |
+| engine, wire-to-wire (TCP→match→TCP, loopback, busy-poll) | 13 µs | 51 µs | ~800 µs† | — |
+| engine, pipelined order flow | — | — | — | 1.77 M req/s in / 2.46 M resp/s out |
 
-\* add and cancel alternate in one loop; the throughput figure is the combined loop's.
+Machine: Intel Core Ultra 5 225U laptop (2 P + 8 E cores), Windows 11, MSVC
+`/O2`, pinned P-core, AC power. A laptop is not a tuned server: treat the
+relative comparisons as the result and the absolute numbers as a floor.
+† The wire-to-wire tail is core starvation — busy-polling needs a core budget
+this chip does not have; blocking sockets trade the median (34 µs p50) for a
+far tighter tail (72 µs p99). Both modes ship; the trade is measured.
 
-**Methodology, in full:** Intel Core Ultra 5 225U, on AC power, Windows 11,
-MSVC 2022 `/O2`, pinned to a P-core (auto-selected via `EfficiencyClass`),
-high process priority. Every sample is bracketed by `LFENCE`-serialized
-`RDTSC` reads, calibrated against `steady_clock`. **Timer overhead (13.0 ns
-p50) is included in every number, not subtracted.** Percentiles are exact —
-full sorted sample sets, no histogram binning. This is a laptop, not a tuned
-server: treat the relative comparisons as the result and the absolute numbers
-as an upper bound. The replay figure is against a *synthetic* ITCH file (see
-caveat below). \* The wire-to-wire tail is core starvation: busy-polling
-needs a core budget this 2-P-core laptop does not have — blocking sockets
-measure 34 µs p50 with a far tighter 72 µs p99. Both modes ship; the
-tradeoff is measured, not asserted.
+## Five findings
 
-```bash
-cmake -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build --config Release --parallel
-./build/bench/pricetime_bench --ops 1000000
-```
+The point of this repo is not that an order book exists — it is what happened
+when every folk-wisdom design choice was measured instead of assumed.
 
-## Why this exists
+**1. The id map dominates; the price ladder barely matters.** The dense-array
+ladder is the folk answer for matching engines. Measured with everything else
+held constant, ladder choice moves medians a few percent — while swapping
+`std::unordered_map` for an open-addressing id map (linear probing,
+backward-shift deletion, no tombstones) moves cancel p50 by 2.1×, execute by
+2.8×, and the p99.9 add tail by **21×** (rehash pauses landing on individual
+operations). Cancels outnumber trades ~10:1 on real feeds; the id map *is*
+the hot path.
 
-Every toy order book on GitHub stops at "it matches orders." This one is built
-around three harder claims:
+**2. The dense ladder's worst case is 1400×, and it is in the published
+table.** Empty the best level when the next active level is far away and the
+array rescans the gap: 81 µs vs the tree's 57 ns, in an adversarial scenario
+built to prove it. A benchmark that hides its own worst case is marketing.
 
-1. **Determinism is testable.** The same input stream must produce a
-   bit-identical book, and the fast implementation must agree op-for-op with
-   an independently written naive model.
-2. **A benchmark that only reports where your design wins is marketing.** The
-   1400× worst case of the data structure I expected to win is in the table
-   below.
-3. **A backtest whose assumptions are invisible is worse than none.** The
-   strategy sandbox prints its fill-model caveats with every run.
+**3. The microbenchmark, the profile, and end-to-end disagree — and all three
+are right.** Microbench: ladders tie. gprof over full replay: the tree ladder
+pays **26% of runtime in level churn** (1.47M creates, 722k destroys) that
+steady-state microbenchmarks structurally cannot see. End-to-end: the tree
+*still* wins replay (1.45 vs 0.81–1.09 M msg/s), because a feed-safe dense
+ladder costs ~160 MB per symbol and the TLB pressure outweighs the churn.
+Three layers, three answers, one lesson about trusting any single
+measurement. ([docs/PROFILE.md](docs/PROFILE.md))
 
-Full design rationale and measurement post-mortem: [ARCHITECTURE.md](ARCHITECTURE.md).
+**4. Busy-polling halves the median and can destroy the tail.** Blocking
+sockets pay ~20 µs of scheduler wakeups per round trip; spinning recovers it
+(34 → 13 µs p50) and then blows up p99.9 by 40× when four hot threads fight
+over two P-cores. Separately, one syscall per 40-byte message capped
+throughput at 30 k/s — batching (coalesced sends, buffered receives) raised
+it **59×** while leaving ping-pong p50 untouched. The latency/throughput
+lever every gateway has, resolved so the latency path pays nothing.
 
-## What the measurements showed (including where I was wrong)
+**5. Ignoring queue position inflates a passive backtest by four orders of
+magnitude.** The sandbox's exact model puts our simulated order behind every
+identified resting order and fills it only when the feed shows them all gone.
+Same strategy, same data: optimistic model **86,153 fills**, queue model
+**6**. That gap is the measured price of the assumption most hobby backtests
+make silently.
 
-The book is parameterized on two compile-time policies — the **price ladder**
-and the **id map** — so both choices could be measured rather than assumed.
+## What is inside
 
-**Finding 1: the id map dominates; the ladder barely matters.** I expected the
-dense array ladder to win clearly; it is the folk-wisdom answer for matching
-engines. Holding everything else constant and swapping only the id map:
+- **The book** — price-time priority matching (limit / IOC / FOK / market),
+  O(1) cancel by id, intrusive per-level FIFO, chunked arena with an intrusive
+  free list, and both structural policies (`Ladder`, `IdMap`) swappable at
+  compile time so they could be raced instead of debated.
+- **ITCH 5.0** — big-endian decoders, framed BinaryFILE reader, an
+  independently written encoder (round-trip agreement is evidence about the
+  spec, not two copies of one misreading), multi-symbol reconstruction with a
+  global order→book index. Reconstruction is **not** matching: the exchange
+  already matched, so feed adds rest passively and conservation becomes
+  `added = executed + canceled + resting` — one side per trade, not two.
+- **The engine** — recv → match → send + market-data threads joined only by
+  wait-free SPSC queues; the book belongs to one thread and no lock ever
+  guards it. Compact 40-byte binary order protocol with a magic tail (desync
+  fails loudly). Market data leaves as **real ITCH 5.0 inside MoldUDP64** —
+  sequenced UDP, heartbeats, end-of-session — and a book rebuilt purely from
+  that stream must hash identically to the engine's own. TSC stamps echo
+  through every response, so wire-to-wire latency needs no clock sync.
+- **The sandbox** — inventory-skewed quoter, integer tick accounting (a
+  double loses cents across 100k fills, and cents are the margin), mid-based
+  marking, markout curves at 1 ms–1 s horizons for adverse selection, and the
+  exact queue-position fill model above.
 
-| configuration | add p50 | cancel p50 | execute p50 | add p99.9 |
-|---|---|---|---|---|
-| dense ladder + open addressing | 176 ns | 349 ns | 195 ns | 407 ns |
-| dense ladder + `std::unordered_map` | 210 ns | **742 ns** | **546 ns** | **8761 ns** |
-| tree ladder + open addressing | 185 ns | 348 ns | 231 ns | 1065 ns |
+## How it is tested
 
-Ladder choice moves the median a few percent. Id-map choice moves cancel by
-2.1×, execute by 2.8×, and the p99.9 tail on add by **21×** — that last one is
-`unordered_map` rehashing landing unpredictably on individual operations.
+148 test cases / 7.3M assertions, all run on GCC 15 and MSVC with warnings as
+errors, plus ASan/UBSan and TSan jobs in CI.
 
-At ~175 ns/op the time goes to cache misses on order nodes and the id-map
-probe; the ladder lookup is a small slice. I tested the obvious explanation —
-that the dense array's 5 MB span was thrashing cache — by adding a tight-range
-ladder sized to the traded band so it fits in L2. **It made no difference.**
-The footprint was not the bottleneck either.
-
-**Finding 2: the dense ladder has a 1400× pathology.** The array finds the
-next best price by scanning toward worse prices when the best level empties. A
-scenario built to defeat that — two active levels at opposite ends of the
-range, best one repeatedly emptied:
-
-| ladder | execute p50 (worst case) |
-|---|---|
-| dense array | 81.4 µs |
-| tree map | 57 ns |
-
-Not a bug — the documented cost of the layout, bounded in practice by sizing
-the range to the instrument. It stays in the table because a benchmark that
-hides its own worst case is not a benchmark.
-
-**Conclusion:** the array ladder buys nothing measurable on this workload and
-carries a 1400× worst case. The configuration I would ship today is the tree
-ladder with the open-addressing id map — not what I assumed when I started.
-
-## Components
-
-**The book** — price-time matching (limit/IOC/FOK/market), O(1) cancel by id,
-intrusive per-level FIFO, chunked arena with an intrusive free list,
-open-addressing id map with **backward-shift deletion** (Knuth Algorithm R)
-rather than tombstones, which would degrade every probe chain over a session
-that cancels millions of orders.
-
-**ITCH 5.0** — big-endian decoders, a framed BinaryFILE reader, an independent
-encoder, and multi-symbol reconstruction. The central semantic point:
-**reconstruction is not matching.** The exchange already matched, so feed adds
-rest passively via `insert_passive()`; routing them through `add_limit()` would
-re-match orders that never crossed and diverge on the first busy symbol.
-Executions consume one side only, so conservation is
-`added = executed + canceled + resting`.
-
-**The engine as a server** — four threads joined only by SPSC queues
-(recv → match → send, plus market data), the book owned exclusively by the
-match thread so no lock ever guards it. 40-byte fixed-size little-endian
-order protocol with a magic tail (desync fails loudly, framing costs
-nothing); every request carries a TSC stamp echoed in its responses, so
-wire-to-wire latency needs no clock sync. Market data leaves as **real ITCH
-5.0 over UDP** showing displayed quantity only — and the loopback tests
-assert that a book rebuilt purely from the UDP datagrams hashes identically
-to the engine's own. Thread placement and busy-polling are explicit config;
-batching (coalesced sends, buffered receives) took throughput from the
-syscall-bound 30 k/s to 1.77 M req/s while leaving ping-pong p50 untouched.
-
-**Strategy sandbox** — inventory-skewed quoter with integer P&L accounting,
-markout-based adverse-selection measurement, and an **exact queue-position
-fill model**: our simulated order joins the back of the queue behind every
-identified resting order, and can only fill once the feed shows them all
-gone. On the same session the optimistic model reports **86,153 fills; the
-queue model reports 6** — four orders of magnitude of backtest inflation,
-measured. `--fill-model optimistic` keeps the naive model for exactly that
-comparison.
-
-## Tools
-
-```bash
-./build/tools/gen_itch day.itch --messages 3000000      # synthetic ITCH file
-./build/tools/replay_itch day.itch --depth 5            # rebuild books, check sanity
-./build/tools/mm_sandbox day.itch --symbol AAPL         # strategy vs. the replay
-./build/tools/engine_server --port 9130 --spin &        # the matching engine
-./build/tools/engine_client --port 9130 --spin          # wire-to-wire latency
-./build/tools/engine_client --port 9130 --mode throughput
-```
-
-`replay_itch` exits non-zero on a parse failure or any crossed book, so it
-doubles as an assertion. `gen_itch` exists so the whole pipeline is testable
-without the multi-gigabyte NASDAQ download — **but it does not reproduce the
-statistical character of real order flow** (arrival clustering, price
-distributions, the true cancel/trade ratio, intraday volume profile). Numbers
-taken against it measure the parser and the book, never the market.
-
-## Testing
-
-143 test cases, 7.3M assertions, run against **both** ladder policies and
-**both** id-map policies, on GCC 15 and MSVC 2022 with warnings as errors.
-
-- **Differential testing against an independent model.**
-  `tests/reference_book.hpp` is a naive O(n) book — flat vector, linear scans,
-  nothing shared with the real implementation. Every policy combination is
-  checked against it op by op: same result codes, same execution stream, same
-  state fingerprint after *every* operation. This exists because dense-vs-map
-  comparison has a blind spot — both run the same matching loop, so a semantic
-  bug would appear in both and pass.
-- **Structural invariants** walked mid-stream: never crossed, levels sorted,
-  FIFO links consistent both ways, aggregates equal to member sums, share
-  conservation.
-- **Golden replay:** a seeded 100k-op stream must hash to a pinned constant on
-  every platform, compiler, and policy. It earned its keep — the M1.5 refactor
-  swapped the id map, rewrote the pool, and added four order types, and the
+- **Differential testing against an independent model.** A deliberately naive
+  O(n) reference book — flat vector, linear scans, nothing shared with the
+  real implementation — must agree with every policy combination op-for-op:
+  result codes, full execution stream, and state fingerprint after *every*
+  operation. Fast-vs-fast comparison shares the matching loop and therefore
+  its bugs; fast-vs-naive does not.
+- **Golden replay.** A seeded 100k-op stream hashes to a pinned constant on
+  every platform, compiler, and policy. It has already earned its keep: the
+  id map was replaced, the pool rewritten, four order types added — the
   constant never moved.
-- **Deterministic performance tests.** CI timing is noise, so CI asserts on
-  allocations instead: the test binary replaces global `operator new` and
-  requires a warmed book to run 200k add/cancel ops with **zero** heap
-  allocations. This caught a real defect — the pool's free list was a
-  `std::vector<Order*>`, so the free list allocated while handing out recycled
-  memory.
-- **Mutation-tested concurrency.** The SPSC queue passes under
-  ThreadSanitizer; relaxing its release/acquire pairing makes TSan report a
-  race at exactly the predicted line. A green sanitizer run means nothing
-  until you have watched it go red for the right reason.
-- CI: Windows + Ubuntu × Debug + Release, an ASan/UBSan job, a TSan job, and
-  an end-to-end pipeline job (generate → replay → strategy).
+- **Deterministic performance tests.** CI timing is noise, so CI asserts
+  allocations: global `operator new` is replaced and counted, and a warmed
+  book must run 200k mixed ops with **zero** heap calls. This caught the
+  free list itself allocating.
+- **Mutation-tested concurrency.** The SPSC queue passes TSan; relaxing its
+  release/acquire pairing makes TSan fail at exactly the predicted line. A
+  sanitizer that has never gone red for the right reason proves nothing.
+- **Feed integrity.** Engine loopback tests unwrap the MoldUDP64 stream,
+  assert zero sequence gaps, and require the stream-rebuilt book to hash
+  identically to the engine's.
+- Plus structural invariants walked mid-stream (never crossed, FIFO link
+  consistency, share conservation) and an end-to-end CI pipeline: generate →
+  replay → strategy → engine session over real sockets.
 
-## Roadmap
+## Quick start
 
-- **M1 — the book** *(done)*
-- **M1.5 — measured optimization:** open-addressing id map, intrusive free
-  list, allocation guards, reference-model differential testing *(done)*
-- **M2 — real data:** ITCH 5.0 parser, multi-symbol reconstruction,
-  memory-mapped replay *(done — pending validation against a real NASDAQ file)*
-- **M3 — the engine as a server:** SPSC queues, TCP order gateway, ITCH-over-
-  UDP market data, wire-to-wire latency measured *(done)*
-- **M4 — the strategy sandbox:** quoter, P&L, markouts, exact queue-position
-  fill model *(done)*
+CMake ≥ 3.21 and any C++20 compiler (MSVC 2022 / GCC 13+ / Clang 16+); the
+core has zero external dependencies.
 
-## Known limitations
+```bash
+cmake -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build --config Release --parallel
+ctest --test-dir build -C Release --output-on-failure
 
-- The ITCH pipeline has **not yet been validated against a real NASDAQ file** —
-  only against synthetic data produced by this repo's own encoder. Round-trip
-  agreement between an independently written encoder and decoder is good
-  evidence, but it is not the same as parsing a real capture.
-- No in-place modify (OUCH-style quantity reduction keeping priority), no
-  self-trade prevention, no auctions or halts.
+./build/bench/pricetime_bench --ops 1000000        # book latency histograms
+./build/tools/gen_itch day.itch --messages 3000000 # synthetic ITCH day
+./build/tools/replay_itch day.itch                 # rebuild books + sanity checks
+./build/tools/mm_sandbox day.itch --symbol AAPL    # strategy vs. the replay
+./build/tools/engine_server --spin &               # the matching engine
+./build/tools/engine_client --spin                 # wire-to-wire latency
+```
+
+Real data: NASDAQ publishes full-day ITCH 5.0 samples at
+`emi.nasdaq.com/ITCH/Nasdaq ITCH/` (several GB). `replay_itch` consumes them
+directly after `gunzip`.
+
+## Honest limitations
+
+- The engine serves one client session, one symbol: the threading
+  architecture was the milestone; multi-tenancy is plumbing.
+- The Mold feed has sequencing and gap *detection* but no re-request channel.
 - The sandbox's queue model still double-counts liquidity at our own level
   (the historical aggressor also fills the order it really hit); fixing that
-  requires counterfactual replay, which changes the question being asked.
-- The engine serves one client session and one symbol: the threading
-  architecture was the milestone, multi-tenancy is plumbing it does not need
-  yet. UDP market data is unicast/multicast-agnostic but has no gap recovery
-  (real feeds pair the multicast with a re-request channel).
-- `Order` is ~48 bytes unpacked; ~32 is reachable with tighter types.
+  is counterfactual replay, a different question.
+- No self-trade prevention, auctions, halts, or odd lots.
+
+Design rationale and the full measurement post-mortems:
+[ARCHITECTURE.md](ARCHITECTURE.md) · [docs/PROFILE.md](docs/PROFILE.md)
 
 ## License
 
