@@ -12,6 +12,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <algorithm>
 #include <string>
 #include <vector>
 
@@ -80,34 +81,59 @@ struct Options {
 };
 
 // Walks every book and verifies the properties a correctly reconstructed
-// exchange book must have. A crossed book is the canonical signal that the
-// reconstruction logic is wrong.
+// exchange book must have — a crossed book or broken share conservation is
+// the canonical signal that reconstruction logic is wrong. EVERY book is
+// checked; on a full-day file with thousands of symbols only the most active
+// are printed, because a nine-thousand-line dump helps no one.
 template <class Books>
 int check_and_report(const Books& books, const Options& opt) {
-  int crossed = 0;
+  int failures = 0;
+  struct Row {
+    Symbol sym;
+    std::uint64_t resting = 0;
+  };
+  std::vector<Row> rows;
+
   books.for_each_book([&](const Symbol& sym, const auto& book) {
     const Level* bid = book.best(Side::Bid);
     const Level* ask = book.best(Side::Ask);
-    const bool bad = bid != nullptr && ask != nullptr && bid->price >= ask->price;
-    if (bad) ++crossed;
-
+    if (bid != nullptr && ask != nullptr && bid->price >= ask->price) {
+      ++failures;
+      std::printf("CROSSED BOOK   %-8s bid %" PRId64 " / ask %" PRId64 "\n", sym.str().c_str(),
+                  bid->price, ask->price);
+    }
     std::uint64_t resting = 0;
     for (const Side s : {Side::Bid, Side::Ask}) {
       book.for_each_level(s, [&](const Level& lvl) { resting += lvl.total_qty; });
     }
     const auto& c = book.counters();
-    const bool conserved =
-        c.added_qty == c.executed_qty + c.canceled_qty + 2 * c.traded_qty + resting;
+    if (c.added_qty != c.executed_qty + c.canceled_qty + 2 * c.traded_qty + resting) {
+      ++failures;
+      std::printf("CONSERVATION VIOLATED  %-8s\n", sym.str().c_str());
+    }
+    rows.push_back(Row{sym, resting});
+  });
 
-    std::printf("\n%-8s  orders %s  shares %s%s%s\n", sym.str().c_str(),
-                commas(book.open_orders()).c_str(), commas(resting).c_str(),
-                bad ? "  [CROSSED BOOK]" : "",
-                conserved ? "" : "  [SHARE CONSERVATION VIOLATED]");
+  std::size_t show = rows.size();
+  if (rows.size() > 24) {
+    show = 12;
+    std::sort(rows.begin(), rows.end(),
+              [](const Row& a, const Row& b) { return a.resting > b.resting; });
+    std::printf("\n(top %zu of %s books by resting shares; every book was checked)\n", show,
+                commas(rows.size()).c_str());
+  }
+  for (std::size_t r = 0; r < show; ++r) {
+    const auto* book = books.find(rows[r].sym);
+    if (book == nullptr) continue;
+    const Level* bid = book->best(Side::Bid);
+    const Level* ask = book->best(Side::Ask);
+    std::printf("\n%-8s  orders %s  shares %s\n", rows[r].sym.str().c_str(),
+                commas(book->open_orders()).c_str(), commas(rows[r].resting).c_str());
     if (bid != nullptr && ask != nullptr) {
       std::printf("          bid %" PRId64 " / ask %" PRId64 "  spread %" PRId64 "\n",
                   bid->price, ask->price, ask->price - bid->price);
     }
-    const Depth d = book.depth(opt.depth);
+    const Depth d = book->depth(opt.depth);
     for (std::size_t i = 0; i < opt.depth; ++i) {
       const bool has_b = i < d.bids.size();
       const bool has_a = i < d.asks.size();
@@ -122,8 +148,8 @@ int check_and_report(const Books& books, const Options& opt) {
       if (has_a) std::printf("%-10" PRId64 " x %" PRIu64, d.asks[i].price, d.asks[i].qty);
       std::printf("\n");
     }
-  });
-  return crossed;
+  }
+  return failures;
 }
 
 template <class Ladder>
@@ -178,10 +204,11 @@ int run(const Options& opt, const MmapFile& file, MultiBook<Ladder>& books) {
   }
   std::printf("symbols        %s\n", commas(books.symbol_count()).c_str());
 
-  const int crossed = check_and_report(books, opt);
+  const int failures = check_and_report(books, opt);
   std::printf("\nsanity         %s\n",
-              crossed == 0 ? "no crossed books" : "CROSSED BOOKS FOUND");
-  return (r.ok() && crossed == 0) ? 0 : 1;
+              failures == 0 ? "no crossed books, share conservation holds in every book"
+                            : "SANITY CHECKS FAILED");
+  return (r.ok() && failures == 0) ? 0 : 1;
 }
 
 }  // namespace
