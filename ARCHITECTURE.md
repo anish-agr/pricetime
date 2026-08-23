@@ -268,6 +268,40 @@ Relaxing every release/acquire to relaxed makes TSan report a data race at the
 slot read — exactly where the reasoning says it must. A sanitizer that has
 never been observed failing for the right reason is not evidence.
 
+### The engine as a server
+
+The full M3 shape is four threads joined only by the SPSC queues — recv →
+match → send, plus a market-data stage — with the book owned exclusively by
+the match thread. No lock ever guards the book because no other thread
+touches it; this is the standard exchange architecture in miniature, and the
+reason M1 could stay single-threaded without that being a dead end.
+
+Measurement drove three design changes worth recording:
+
+- **Blocking sockets cost ~20 µs of scheduler wakeups per round trip** on
+  Windows loopback (34 µs p50 blocking vs 13 µs busy-polling). Busy-polling
+  recovers it by burning a core — and on this 2-P-core laptop, the tail shows
+  what happens when the core budget is not there: spinning threads starve
+  each other and p99.9 blows out to ~800 µs while blocking mode holds 72 µs
+  p99. Both modes ship as configuration; the trade is measured, not asserted.
+- **One syscall per 40-byte message caps everything at the syscall rate.**
+  The first throughput run measured 30 k req/s — a statement about loopback
+  plumbing, not the engine. Coalescing queued responses into single sends and
+  buffering receives raised it 59× to 1.77 M req/s in / 2.46 M resp/s out,
+  with ping-pong p50 unchanged: batch-of-one costs the latency path nothing.
+- **Market data shows displayed quantity only.** Emitting the entered
+  quantity of a crossing order on its add/replace message is the bug that
+  makes a feed-reconstructed book silently diverge from the engine's. The
+  loopback tests assert the differential: a book rebuilt purely from the UDP
+  datagrams (which are real ITCH 5.0, produced by the same encoder the tests
+  round-trip) must hash identically to the engine's own book.
+
+One flaky test earned its keep by having a real mechanism: the client
+disconnected with requests still in flight, and closing a socket with unread
+inbound data sends RST — which discards the undelivered stream, costing the
+engine the session's tail. The engine was correct; the test now drains
+through a rejected-sentinel flush, the way a real client would quiesce.
+
 ## 9. Strategy measurement (M4)
 
 The sandbox exists to measure *why* a naive quoter loses money, not to claim
@@ -294,12 +328,22 @@ quote is filled when a trade *prints* at or through its price — which means
 reading the resting order's side and price off an execution message before the
 replayer consumes it.
 
-What the model still does not do is model queue position, and that is the
-single largest determinant of a passive strategy's real P&L. Every print at or
-through our price fills us, where a real order waits behind everyone already
-resting at that level. The caveats print with every run rather than living in
-a comment, because a backtest whose assumptions are invisible is worse than no
-backtest.
+The queue-position model closes the largest remaining gap. When our
+simulated order joins a level, every real order already resting there is
+ahead of us — and ITCH identifies each one, so their departures (executed,
+canceled, deleted, replaced away) are tracked exactly. Only when the recorded
+set is empty are we at the front, and only then do prints at our price reach
+us. On the same synthetic session the optimistic model reports 86,153 fills
+and the queue model reports 6: four orders of magnitude of backtest inflation
+from one silent assumption, now measured instead of made.
+
+One approximation remains, stated in the tool's own output: once we are at
+the front, the historical aggressor that fills us also still fills the real
+order it actually hit, so liquidity at our level is double-counted by our
+participation. Fixing that requires counterfactual replay — letting the book
+diverge from history the moment we participate — which changes the question
+the sandbox answers from "what happened around our quotes" to "what would
+have happened", a genuinely different (and harder) epistemic claim.
 
 ## 10. Open questions
 

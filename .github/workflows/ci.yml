@@ -43,6 +43,19 @@ jobs:
           ./build/tools/gen_itch /tmp/ci.itch --messages 200000
           ./build/tools/replay_itch /tmp/ci.itch --depth 3
           ./build/tools/mm_sandbox /tmp/ci.itch --symbol AAPL --half-spread 1
+          ./build/tools/mm_sandbox /tmp/ci.itch --symbol AAPL --half-spread 1 --fill-model optimistic
+
+      # Engine smoke: server + client over real loopback sockets on the
+      # runner. Latency numbers from CI are meaningless and not recorded;
+      # what this asserts is that the session completes and both binaries
+      # agree it did.
+      - name: Engine smoke
+        if: runner.os == 'Linux' && matrix.config == 'Release'
+        run: |
+          ./build/tools/engine_server --port 9130 &
+          sleep 1
+          ./build/tools/engine_client --port 9130 --ops 2000 --core -2
+          wait
 
   sanitizers:
     name: ubuntu / asan+ubsan

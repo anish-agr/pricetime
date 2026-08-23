@@ -16,6 +16,7 @@ percentiles, `LFENCE`-serialized timestamps:
 | cancel (steady state) | 292 ns | 527 ns | 1.08 µs | 3.66 M/s* |
 | execute (aggressive add, one full fill) | 231 ns | 419 ns | 637 ns | 3.61 M/s |
 | **ITCH replay** (parse + full book reconstruction) | — | — | — | **1.4 M msg/s** |
+| **wire-to-wire** (TCP in → match → TCP out, loopback, busy-poll) | **13 µs** | 51 µs | ~800 µs* | **1.77 M req/s** |
 
 \* add and cancel alternate in one loop; the throughput figure is the combined loop's.
 
@@ -27,7 +28,10 @@ p50) is included in every number, not subtracted.** Percentiles are exact —
 full sorted sample sets, no histogram binning. This is a laptop, not a tuned
 server: treat the relative comparisons as the result and the absolute numbers
 as an upper bound. The replay figure is against a *synthetic* ITCH file (see
-caveat below).
+caveat below). \* The wire-to-wire tail is core starvation: busy-polling
+needs a core budget this 2-P-core laptop does not have — blocking sockets
+measure 34 µs p50 with a far tighter 72 µs p99. Both modes ship; the
+tradeoff is measured, not asserted.
 
 ```bash
 cmake -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build --config Release --parallel
@@ -109,18 +113,36 @@ re-match orders that never crossed and diverge on the first busy symbol.
 Executions consume one side only, so conservation is
 `added = executed + canceled + resting`.
 
-**SPSC queue** — wait-free, cache-line padded, release/acquire published; the
-M3 seam between network and matching threads.
+**The engine as a server** — four threads joined only by SPSC queues
+(recv → match → send, plus market data), the book owned exclusively by the
+match thread so no lock ever guards it. 40-byte fixed-size little-endian
+order protocol with a magic tail (desync fails loudly, framing costs
+nothing); every request carries a TSC stamp echoed in its responses, so
+wire-to-wire latency needs no clock sync. Market data leaves as **real ITCH
+5.0 over UDP** showing displayed quantity only — and the loopback tests
+assert that a book rebuilt purely from the UDP datagrams hashes identically
+to the engine's own. Thread placement and busy-polling are explicit config;
+batching (coalesced sends, buffered receives) took throughput from the
+syscall-bound 30 k/s to 1.77 M req/s while leaving ping-pong p50 untouched.
 
-**Strategy sandbox** — inventory-skewed quoter with integer P&L accounting and
-markout-based adverse-selection measurement.
+**Strategy sandbox** — inventory-skewed quoter with integer P&L accounting,
+markout-based adverse-selection measurement, and an **exact queue-position
+fill model**: our simulated order joins the back of the queue behind every
+identified resting order, and can only fill once the feed shows them all
+gone. On the same session the optimistic model reports **86,153 fills; the
+queue model reports 6** — four orders of magnitude of backtest inflation,
+measured. `--fill-model optimistic` keeps the naive model for exactly that
+comparison.
 
 ## Tools
 
 ```bash
 ./build/tools/gen_itch day.itch --messages 3000000      # synthetic ITCH file
 ./build/tools/replay_itch day.itch --depth 5            # rebuild books, check sanity
-./build/tools/mm_sandbox day.itch --symbol AAPL         # run the strategy
+./build/tools/mm_sandbox day.itch --symbol AAPL         # strategy vs. the replay
+./build/tools/engine_server --port 9130 --spin &        # the matching engine
+./build/tools/engine_client --port 9130 --spin          # wire-to-wire latency
+./build/tools/engine_client --port 9130 --mode throughput
 ```
 
 `replay_itch` exits non-zero on a parse failure or any crossed book, so it
@@ -132,7 +154,7 @@ taken against it measure the parser and the book, never the market.
 
 ## Testing
 
-134 test cases, 7.3M assertions, run against **both** ladder policies and
+143 test cases, 7.3M assertions, run against **both** ladder policies and
 **both** id-map policies, on GCC 15 and MSVC 2022 with warnings as errors.
 
 - **Differential testing against an independent model.**
@@ -169,10 +191,10 @@ taken against it measure the parser and the book, never the market.
   list, allocation guards, reference-model differential testing *(done)*
 - **M2 — real data:** ITCH 5.0 parser, multi-symbol reconstruction,
   memory-mapped replay *(done — pending validation against a real NASDAQ file)*
-- **M3 — the engine as a server:** SPSC queue *(done)*; TCP order gateway, UDP
-  multicast feed, and wire-to-wire latency still to build
-- **M4 — the strategy sandbox:** quoter, P&L, markouts *(done)*; queue-position
-  modelling is the honest next step
+- **M3 — the engine as a server:** SPSC queues, TCP order gateway, ITCH-over-
+  UDP market data, wire-to-wire latency measured *(done)*
+- **M4 — the strategy sandbox:** quoter, P&L, markouts, exact queue-position
+  fill model *(done)*
 
 ## Known limitations
 
@@ -182,8 +204,13 @@ taken against it measure the parser and the book, never the market.
   evidence, but it is not the same as parsing a real capture.
 - No in-place modify (OUCH-style quantity reduction keeping priority), no
   self-trade prevention, no auctions or halts.
-- The sandbox's fill model ignores queue position, which is the single biggest
-  determinant of a passive strategy's real P&L.
+- The sandbox's queue model still double-counts liquidity at our own level
+  (the historical aggressor also fills the order it really hit); fixing that
+  requires counterfactual replay, which changes the question being asked.
+- The engine serves one client session and one symbol: the threading
+  architecture was the milestone, multi-tenancy is plumbing it does not need
+  yet. UDP market data is unicast/multicast-agnostic but has no gap recovery
+  (real feeds pair the multicast with a re-request channel).
 - `Order` is ~48 bytes unpacked; ~32 is reachable with tighter types.
 
 ## License
