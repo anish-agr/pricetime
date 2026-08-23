@@ -259,14 +259,35 @@ TEST_CASE("engine loopback: sustained two-sided flow keeps engine and feed in ag
                                           : static_cast<Price>(1000 + rng() % 11);
     REQUIRE(client.send(enter(next++, side, price, static_cast<Qty>(1 + rng() % 50))));
     wire::Response resp;
-    REQUIRE(client.recv(resp));  // the ack; fills may follow
+    REQUIRE(client.recv(resp));  // keeps flow balanced; fills accumulate beyond this
     ++responses;
+  }
+
+  // Drain before disconnecting. Crossing orders produce three responses (ack
+  // plus both sides of the fill) while the loop above read only one per
+  // request, so requests can still be in flight here — and closing a socket
+  // with unread inbound data sends RST, which on Windows discards the
+  // undelivered stream and cost the engine the tail of the session (observed
+  // as 582/600 requests, roughly one run in ten). Responses are strictly
+  // ordered through one queue, so a deliberately rejected sentinel read back
+  // proves everything before it arrived.
+  {
+    wire::Request flush;
+    flush.kind = wire::ReqKind::Cancel;
+    flush.id = 0xF1005;  // never entered, must reject
+    REQUIRE(client.send(flush));
+    wire::Response resp;
+    for (;;) {
+      REQUIRE(client.recv(resp));
+      ++responses;
+      if (resp.kind == wire::RespKind::Rejected && resp.id == 0xF1005) break;
+    }
   }
   client.disconnect();
   engine.wait_for_session_end();
 
-  CHECK(engine.stats().requests == kOrders);
-  CHECK(engine.stats().responses >= responses);
+  CHECK(engine.stats().requests == kOrders + 1);  // + the flush sentinel
+  CHECK(engine.stats().responses == responses);
 
   // Drain the feed and compare.
   MultiBook<MapLadder> md_books;
