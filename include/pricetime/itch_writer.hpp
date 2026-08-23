@@ -27,6 +27,14 @@ class Writer {
   [[nodiscard]] const std::vector<std::uint8_t>& bytes() const noexcept { return buf_; }
   [[nodiscard]] std::size_t message_count() const noexcept { return count_; }
 
+  // Drops the buffered bytes but keeps the allocation, so a long-lived writer
+  // that encodes one message at a time (the market-data thread) never
+  // reallocates after warmup.
+  void clear() noexcept {
+    buf_.clear();
+    count_ = 0;
+  }
+
   void system_event(std::uint64_t ts, char code) {
     begin('S', 12);
     put48(ts);

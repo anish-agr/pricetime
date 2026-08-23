@@ -26,7 +26,8 @@ add_executable(pricetime_tests
   test_itch.cpp
   test_itch_replay.cpp
   test_spsc.cpp
-  test_market_maker.cpp)
+  test_market_maker.cpp
+  test_engine.cpp)
 
 find_package(Threads REQUIRED)
 
