@@ -293,8 +293,14 @@ Measurement drove three design changes worth recording:
   quantity of a crossing order on its add/replace message is the bug that
   makes a feed-reconstructed book silently diverge from the engine's. The
   loopback tests assert the differential: a book rebuilt purely from the UDP
-  datagrams (which are real ITCH 5.0, produced by the same encoder the tests
-  round-trip) must hash identically to the engine's own book.
+  stream (real ITCH 5.0 inside real MoldUDP64 — sequenced packets with
+  heartbeats and an end-of-session marker, produced by the same encoders the
+  tests round-trip) must hash identically to the engine's own book, with
+  zero sequence gaps. Mold's sequence numbers are the part that matters:
+  UDP loses packets silently, and numbering every message is what turns
+  silent loss into a known gap that a re-request channel could fill. The
+  GapTracker does that arithmetic; the re-request channel itself is a
+  documented non-goal.
 
 One flaky test earned its keep by having a real mechanism: the client
 disconnected with requests still in flight, and closing a socket with unread
