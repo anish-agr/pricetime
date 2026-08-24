@@ -133,6 +133,28 @@ class MmapFile {
   [[nodiscard]] std::size_t size() const noexcept { return size_; }
   [[nodiscard]] const std::string& error() const noexcept { return error_; }
 
+  // Asks the OS to start paging [offset, offset+len) in NOW, asynchronously.
+  //
+  // This matters enormously on Windows, where a mapped view has no readahead
+  // by default: a sequential parse faults one 4 KB page at a time, each fault
+  // a synchronous disk read. The first full-day replay of a real 8.25 GB
+  // NASDAQ file ran at 2 MB/s for exactly this reason — thirty-two times
+  // slower than the parser itself. A reader that walks the file should call
+  // this a window ahead of its cursor; POSIX gets the same via
+  // madvise(WILLNEED), on top of the MADV_SEQUENTIAL readahead already set.
+  void prefetch(std::size_t offset, std::size_t len) const noexcept {
+    if (data_ == nullptr || offset >= size_) return;
+    if (len > size_ - offset) len = size_ - offset;
+#if defined(_WIN32)
+    WIN32_MEMORY_RANGE_ENTRY range;
+    range.VirtualAddress = const_cast<std::uint8_t*>(data_) + offset;
+    range.NumberOfBytes = len;
+    PrefetchVirtualMemory(GetCurrentProcess(), 1, &range, 0);
+#else
+    ::madvise(const_cast<std::uint8_t*>(data_) + offset, len, MADV_WILLNEED);
+#endif
+  }
+
  private:
   void move_from(MmapFile& other) {
     data_ = other.data_;

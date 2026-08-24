@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <type_traits>
 #include <unordered_map>
 #include <vector>
 
@@ -45,7 +46,13 @@ class StdIdMap {
   std::unordered_map<OrderId, Order*> map_;
 };
 
-// Open addressing with linear probing and backward-shift deletion.
+// Open addressing with linear probing and backward-shift deletion,
+// generalized over the mapped pointer type: the book maps id -> Order*, and
+// MultiBook maps id -> OrderBook* for feed routing. The second use exists
+// because profiling the real full-day replay showed the std::unordered_map
+// order->book index costing ~64 bytes per live order in node and bucket
+// overhead — the same lesson as the id map itself, one layer up. Here a live
+// order costs 16 bytes at 70% load.
 //
 // Why this beats the node-based map on this workload:
 //  - one contiguous array, so a lookup touches one cache line in the common
@@ -59,14 +66,17 @@ class StdIdMap {
 // be simpler but degrade a long-running book — an exchange session cancels
 // millions of orders, and every tombstone permanently lengthens some probe
 // chain until a full rehash.
-class OpenAddressIdMap {
+template <class V>
+class OpenAddressMap {
+  static_assert(std::is_pointer_v<V>, "values are pointers; nullptr marks an empty slot");
+
  public:
   static constexpr OrderId kEmpty = 0;
   static constexpr std::size_t kInitialCapacity = 1024;  // power of two
 
-  OpenAddressIdMap() { rehash(kInitialCapacity); }
+  OpenAddressMap() { rehash(kInitialCapacity); }
 
-  [[nodiscard]] Order* find(OrderId id) const noexcept {
+  [[nodiscard]] V find(OrderId id) const noexcept {
     std::size_t i = hash(id) & mask_;
     for (;;) {
       const Slot& s = slots_[i];
@@ -76,7 +86,7 @@ class OpenAddressIdMap {
     }
   }
 
-  bool insert(OrderId id, Order* value) {
+  bool insert(OrderId id, V value) {
     // Grow at 70% load: linear probing degrades sharply above that, and the
     // power-of-two capacity keeps the modulo a single AND.
     if ((size_ + 1) * 10 >= slots_.size() * 7) rehash(slots_.size() * 2);
@@ -114,7 +124,7 @@ class OpenAddressIdMap {
  private:
   struct Slot {
     OrderId key = kEmpty;
-    Order* value = nullptr;
+    V value = nullptr;
   };
 
   // splitmix64's finalizer: cheap (three multiply-shift rounds) and avalanches
@@ -170,5 +180,7 @@ class OpenAddressIdMap {
   std::size_t mask_ = 0;
   std::size_t size_ = 0;
 };
+
+using OpenAddressIdMap = OpenAddressMap<Order*>;
 
 }  // namespace pricetime

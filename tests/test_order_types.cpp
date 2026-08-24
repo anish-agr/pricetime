@@ -6,6 +6,7 @@
 #include "pricetime/book.hpp"
 #include "pricetime/ladder_dense.hpp"
 #include "pricetime/ladder_map.hpp"
+#include "pricetime/ladder_pooled.hpp"
 
 using namespace pricetime;
 using pricetime::test::check_invariants;
@@ -20,7 +21,7 @@ struct ExecRecorder {
 
 }  // namespace
 
-TEST_CASE_TEMPLATE("id 0 is reserved and rejected everywhere", L, MapLadder, DenseLadder) {
+TEST_CASE_TEMPLATE("id 0 is reserved and rejected everywhere", L, MapLadder, DenseLadder, PooledMapLadder) {
   auto book = make_book<L>();
   CHECK(book.add_limit(0, Side::Bid, 1000, 10) == Result::RejectedBadId);
   CHECK(book.add_ioc(0, Side::Bid, 1000, 10) == Result::RejectedBadId);
@@ -33,7 +34,7 @@ TEST_CASE_TEMPLATE("id 0 is reserved and rejected everywhere", L, MapLadder, Den
   check_invariants(book);
 }
 
-TEST_CASE_TEMPLATE("IOC: fills what it can and kills the rest", L, MapLadder, DenseLadder) {
+TEST_CASE_TEMPLATE("IOC: fills what it can and kills the rest", L, MapLadder, DenseLadder, PooledMapLadder) {
   auto book = make_book<L>();
   CHECK(book.add_limit(1, Side::Ask, 1000, 4) == Result::Ok);
 
@@ -63,7 +64,7 @@ TEST_CASE_TEMPLATE("IOC against an empty book trades nothing and rests nothing",
   check_invariants(book);
 }
 
-TEST_CASE_TEMPLATE("IOC does not reach past its limit price", L, MapLadder, DenseLadder) {
+TEST_CASE_TEMPLATE("IOC does not reach past its limit price", L, MapLadder, DenseLadder, PooledMapLadder) {
   auto book = make_book<L>();
   CHECK(book.add_limit(1, Side::Ask, 1000, 5) == Result::Ok);
   CHECK(book.add_limit(2, Side::Ask, 1005, 5) == Result::Ok);
@@ -77,7 +78,7 @@ TEST_CASE_TEMPLATE("IOC does not reach past its limit price", L, MapLadder, Dens
   check_invariants(book);
 }
 
-TEST_CASE_TEMPLATE("FOK: fills completely or leaves no trace", L, MapLadder, DenseLadder) {
+TEST_CASE_TEMPLATE("FOK: fills completely or leaves no trace", L, MapLadder, DenseLadder, PooledMapLadder) {
   auto book = make_book<L>();
   CHECK(book.add_limit(1, Side::Ask, 1000, 4) == Result::Ok);
 
@@ -113,7 +114,7 @@ TEST_CASE_TEMPLATE("FOK: fills completely or leaves no trace", L, MapLadder, Den
   check_invariants(book);
 }
 
-TEST_CASE_TEMPLATE("FOK ignores liquidity beyond its limit price", L, MapLadder, DenseLadder) {
+TEST_CASE_TEMPLATE("FOK ignores liquidity beyond its limit price", L, MapLadder, DenseLadder, PooledMapLadder) {
   auto book = make_book<L>();
   CHECK(book.add_limit(1, Side::Ask, 1000, 4) == Result::Ok);
   CHECK(book.add_limit(2, Side::Ask, 1010, 100) == Result::Ok);  // plenty, but too expensive
@@ -190,7 +191,7 @@ TEST_CASE_TEMPLATE("aggressive orders respect FIFO priority like any other", L, 
   check_invariants(book);
 }
 
-TEST_CASE_TEMPLATE("L2 depth snapshot aggregates and truncates", L, MapLadder, DenseLadder) {
+TEST_CASE_TEMPLATE("L2 depth snapshot aggregates and truncates", L, MapLadder, DenseLadder, PooledMapLadder) {
   auto book = make_book<L>();
   CHECK(book.add_limit(1, Side::Bid, 1000, 10) == Result::Ok);
   CHECK(book.add_limit(2, Side::Bid, 1000, 5) == Result::Ok);

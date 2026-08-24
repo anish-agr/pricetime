@@ -25,10 +25,10 @@
 
 #include "pricetime/itch.hpp"
 #include "pricetime/itch_reader.hpp"
+#include "pricetime/itch_stream.hpp"
 #include "pricetime/itch_replay.hpp"
 #include "pricetime/ladder_map.hpp"
 #include "pricetime/market_maker.hpp"
-#include "pricetime/mmap_file.hpp"
 #include "pricetime/multi_book.hpp"
 #include "pricetime/queue_position.hpp"
 
@@ -146,12 +146,6 @@ int main(int argc, char** argv) {
     return 2;
   }
 
-  MmapFile file;
-  if (!file.open(cfg.path)) {
-    std::fprintf(stderr, "error: %s\n", file.error().c_str());
-    return 2;
-  }
-
   MultiBook<MapLadder> books;
   Replayer<MapLadder> rep(books);
   rep.track_only({cfg.symbol});
@@ -166,8 +160,8 @@ int main(int argc, char** argv) {
   bool have_mid = false;
 
   const auto t0 = std::chrono::steady_clock::now();
-  const ReadResult r = for_each_framed_message(
-      file.data(), file.size(), [&](const std::uint8_t* m, std::size_t len) {
+  const ReadResult r = for_each_framed_stream(
+      cfg.path, [&](const std::uint8_t* m, std::size_t len) {
         const OrderEvent ev = peek_event(books, m);
         const Price mid_before = last_mid;
         const bool had_mid = have_mid;

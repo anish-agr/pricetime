@@ -6,6 +6,7 @@
 #include "pricetime/book.hpp"
 #include "pricetime/ladder_dense.hpp"
 #include "pricetime/ladder_map.hpp"
+#include "pricetime/ladder_pooled.hpp"
 
 using namespace pricetime;
 using pricetime::test::make_book;
@@ -19,7 +20,7 @@ struct ExecRecorder {
 
 }  // namespace
 
-TEST_CASE_TEMPLATE("exact cross fills fully and rests nothing", L, MapLadder, DenseLadder) {
+TEST_CASE_TEMPLATE("exact cross fills fully and rests nothing", L, MapLadder, DenseLadder, PooledMapLadder) {
   auto book = make_book<L>();
   CHECK(book.add_limit(1, Side::Ask, 1000, 10) == Result::Ok);
 
@@ -157,7 +158,7 @@ TEST_CASE_TEMPLATE("replace loses time priority even at the same price", L, MapL
   pricetime::test::check_invariants(book);
 }
 
-TEST_CASE_TEMPLATE("replace priced through the book executes", L, MapLadder, DenseLadder) {
+TEST_CASE_TEMPLATE("replace priced through the book executes", L, MapLadder, DenseLadder, PooledMapLadder) {
   auto book = make_book<L>();
   CHECK(book.add_limit(1, Side::Ask, 1000, 10) == Result::Ok);
   CHECK(book.add_limit(2, Side::Bid, 990, 10) == Result::Ok);

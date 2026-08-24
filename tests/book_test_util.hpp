@@ -10,6 +10,7 @@
 #include "pricetime/book.hpp"
 #include "pricetime/ladder_dense.hpp"
 #include "pricetime/ladder_map.hpp"
+#include "pricetime/ladder_pooled.hpp"
 
 namespace pricetime::test {
 
@@ -30,6 +31,11 @@ inline OrderBook<MapLadder> make_book<MapLadder>() {
 template <>
 inline OrderBook<DenseLadder> make_book<DenseLadder>() {
   return OrderBook<DenseLadder>{kDenseMin, kDenseMax};
+}
+
+template <>
+inline OrderBook<PooledMapLadder> make_book<PooledMapLadder>() {
+  return OrderBook<PooledMapLadder>{};
 }
 
 // Walks the entire book and checks every structural invariant:

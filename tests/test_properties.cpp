@@ -7,6 +7,7 @@
 #include "pricetime/book.hpp"
 #include "pricetime/ladder_dense.hpp"
 #include "pricetime/ladder_map.hpp"
+#include "pricetime/ladder_pooled.hpp"
 
 using namespace pricetime;
 using pricetime::test::check_invariants;

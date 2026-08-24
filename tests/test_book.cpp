@@ -4,11 +4,12 @@
 #include "pricetime/book.hpp"
 #include "pricetime/ladder_dense.hpp"
 #include "pricetime/ladder_map.hpp"
+#include "pricetime/ladder_pooled.hpp"
 
 using namespace pricetime;
 using pricetime::test::make_book;
 
-TEST_CASE_TEMPLATE("add rests and best prices update", L, MapLadder, DenseLadder) {
+TEST_CASE_TEMPLATE("add rests and best prices update", L, MapLadder, DenseLadder, PooledMapLadder) {
   auto book = make_book<L>();
   REQUIRE(book.best(Side::Bid) == nullptr);
   REQUIRE(book.best(Side::Ask) == nullptr);
@@ -27,7 +28,7 @@ TEST_CASE_TEMPLATE("add rests and best prices update", L, MapLadder, DenseLadder
   pricetime::test::check_invariants(book);
 }
 
-TEST_CASE_TEMPLATE("multiple orders aggregate at one level", L, MapLadder, DenseLadder) {
+TEST_CASE_TEMPLATE("multiple orders aggregate at one level", L, MapLadder, DenseLadder, PooledMapLadder) {
   auto book = make_book<L>();
   CHECK(book.add_limit(1, Side::Bid, 1000, 10) == Result::Ok);
   CHECK(book.add_limit(2, Side::Bid, 1000, 15) == Result::Ok);
@@ -38,7 +39,7 @@ TEST_CASE_TEMPLATE("multiple orders aggregate at one level", L, MapLadder, Dense
   CHECK(lvl->order_count == 3);
 }
 
-TEST_CASE_TEMPLATE("rejects: duplicate id, zero qty, unknown cancel", L, MapLadder, DenseLadder) {
+TEST_CASE_TEMPLATE("rejects: duplicate id, zero qty, unknown cancel", L, MapLadder, DenseLadder, PooledMapLadder) {
   auto book = make_book<L>();
   CHECK(book.add_limit(1, Side::Bid, 1000, 10) == Result::Ok);
   CHECK(book.add_limit(1, Side::Bid, 1001, 10) == Result::RejectedDuplicateId);
@@ -48,7 +49,7 @@ TEST_CASE_TEMPLATE("rejects: duplicate id, zero qty, unknown cancel", L, MapLadd
   pricetime::test::check_invariants(book);
 }
 
-TEST_CASE_TEMPLATE("cancel removes the order and empties the level", L, MapLadder, DenseLadder) {
+TEST_CASE_TEMPLATE("cancel removes the order and empties the level", L, MapLadder, DenseLadder, PooledMapLadder) {
   auto book = make_book<L>();
   CHECK(book.add_limit(1, Side::Bid, 1000, 10) == Result::Ok);
   CHECK(book.add_limit(2, Side::Bid, 999, 5) == Result::Ok);
@@ -86,7 +87,7 @@ TEST_CASE("dense ladder rejects out-of-range prices without touching the book") 
   CHECK(book.add_limit(4, Side::Ask, 200, 10) == Result::Ok);
 }
 
-TEST_CASE_TEMPLATE("replace: new id, new priority, old order gone", L, MapLadder, DenseLadder) {
+TEST_CASE_TEMPLATE("replace: new id, new priority, old order gone", L, MapLadder, DenseLadder, PooledMapLadder) {
   auto book = make_book<L>();
   CHECK(book.add_limit(1, Side::Bid, 1000, 10) == Result::Ok);
   CHECK(book.replace(1, 2, 1001, 15) == Result::Ok);

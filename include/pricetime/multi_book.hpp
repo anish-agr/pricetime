@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "pricetime/book.hpp"
+#include "pricetime/id_map.hpp"
 #include "pricetime/symbol.hpp"
 
 namespace pricetime {
@@ -60,14 +61,11 @@ class MultiBook {
   // whichever book owns that order. Returns nullptr when the id is unknown —
   // which on a real feed is normal, not an error: a full-day file references
   // orders for symbols the replay may have filtered out.
-  BookType* book_for_order(OrderId id) {
-    const auto it = owner_.find(id);
-    return it == owner_.end() ? nullptr : it->second;
-  }
+  BookType* book_for_order(OrderId id) { return owner_.find(id); }
 
   // Records that `id` now lives in `symbol`'s book. Called by the replay
   // driver after a successful add.
-  void note_order(OrderId id, BookType& b) { owner_[id] = &b; }
+  void note_order(OrderId id, BookType& b) { owner_.insert(id, &b); }
 
   void forget_order(OrderId id) { owner_.erase(id); }
 
@@ -80,7 +78,11 @@ class MultiBook {
 
  private:
   std::unordered_map<Symbol, std::unique_ptr<BookType>, SymbolHash> books_;
-  std::unordered_map<OrderId, BookType*> owner_;
+  // Open addressing rather than std::unordered_map: on a real full-day
+  // replay this index holds an entry per live order, and node + bucket
+  // overhead (~64 bytes each) made it a measurable part of an 8 GB working
+  // set. Same finding as the per-book id map, one layer up.
+  OpenAddressMap<BookType*> owner_;
   std::function<std::unique_ptr<BookType>()> make_book_;
 };
 

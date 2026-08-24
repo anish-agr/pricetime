@@ -1,7 +1,7 @@
 // Rebuilds order books from a NASDAQ TotalView-ITCH 5.0 file and reports
 // throughput plus sanity checks.
 //
-//   replay_itch <file.itch> [--symbols AAPL,MSFT] [--ladder map|dense]
+//   replay_itch <file.itch> [--symbols AAPL,MSFT] [--ladder map|pooled|dense]
 //               [--depth N] [--progress]
 //
 // The file is memory-mapped, so a multi-gigabyte day costs no user-space copy
@@ -13,13 +13,16 @@
 #include <cstdlib>
 #include <cstring>
 #include <algorithm>
+#include <fstream>
 #include <string>
 #include <vector>
 
 #include "pricetime/itch_reader.hpp"
 #include "pricetime/itch_replay.hpp"
+#include "pricetime/itch_stream.hpp"
 #include "pricetime/ladder_dense.hpp"
 #include "pricetime/ladder_map.hpp"
+#include "pricetime/ladder_pooled.hpp"
 #include "pricetime/mmap_file.hpp"
 #include "pricetime/multi_book.hpp"
 
@@ -76,8 +79,11 @@ struct Options {
   std::string path;
   std::vector<Symbol> symbols;
   bool dense = false;
+  bool pooled = false;
   std::size_t depth = 5;
   bool progress = false;
+  bool minute_profile = false;
+  bool use_mmap = false;  // default: buffered streaming (see itch_stream.hpp)
 };
 
 // Walks every book and verifies the properties a correctly reconstructed
@@ -153,25 +159,60 @@ int check_and_report(const Books& books, const Options& opt) {
 }
 
 template <class Ladder>
-int run(const Options& opt, const MmapFile& file, MultiBook<Ladder>& books) {
+int run(const Options& opt, std::uint64_t file_bytes, MultiBook<Ladder>& books) {
   Replayer<Ladder> rep(books);
   if (!opt.symbols.empty()) rep.track_only(opt.symbols);
 
   const auto t0 = std::chrono::steady_clock::now();
   std::uint64_t since_tick = 0;
-  const ReadResult r = for_each_framed_message(
-      file.data(), file.size(), [&](const std::uint8_t* m, std::size_t len) {
-        rep.apply(m, len);
-        if (opt.progress && ++since_tick == 5000000) {
-          since_tick = 0;
-          std::fprintf(stderr, "  ... %s messages\n", commas(rep.stats().messages).c_str());
-        }
-      });
+  // 24h of minutes; ITCH timestamps are nanoseconds since midnight Eastern.
+  std::vector<std::uint64_t> per_minute(24 * 60, 0);
+
+  const auto on_message = [&](const std::uint8_t* m, std::size_t len) {
+    rep.apply(m, len);
+    if (opt.minute_profile) {
+      const std::size_t minute =
+          static_cast<std::size_t>(rep.stats().last_timestamp / 60000000000ull);
+      if (minute < per_minute.size()) ++per_minute[minute];
+    }
+    if (opt.progress && ++since_tick == 5000000) {
+      since_tick = 0;
+      std::fprintf(stderr, "  ... %s messages\n", commas(rep.stats().messages).c_str());
+    }
+  };
+
+  ReadResult r;
+  if (opt.use_mmap) {
+    // The mapped path, kept for the measured comparison: on a file larger
+    // than RAM it loses badly to streaming (see itch_stream.hpp), and having
+    // both switchable is what made that a number instead of an argument.
+    MmapFile file;
+    if (!file.open(opt.path)) {
+      std::fprintf(stderr, "error: %s\n", file.error().c_str());
+      return 2;
+    }
+    constexpr std::size_t kPrefetchChunk = 32u << 20;
+    constexpr std::size_t kPrefetchAhead = 64u << 20;
+    std::size_t next_prefetch = 0;
+    file.prefetch(0, kPrefetchAhead);
+    r = for_each_framed_message(file.data(), file.size(),
+                                [&](const std::uint8_t* m, std::size_t len) {
+                                  const auto pos = static_cast<std::size_t>(m - file.data());
+                                  if (pos >= next_prefetch) {
+                                    file.prefetch(pos + kPrefetchChunk, kPrefetchAhead);
+                                    next_prefetch = pos + kPrefetchChunk;
+                                  }
+                                  on_message(m, len);
+                                });
+  } else {
+    r = for_each_framed_stream(opt.path, on_message);
+  }
   const double secs = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
 
   const ReplayStats& s = rep.stats();
   std::printf("file           %s\n", opt.path.c_str());
-  std::printf("size           %s bytes\n", commas(file.size()).c_str());
+  std::printf("io             %s\n", opt.use_mmap ? "mmap + prefetch" : "buffered stream");
+  std::printf("size           %s bytes\n", commas(file_bytes).c_str());
   std::printf("parse status   %s", status_text(r.status));
   if (!r.ok()) {
     std::printf(" at byte %s", commas(r.offset).c_str());
@@ -186,7 +227,7 @@ int run(const Options& opt, const MmapFile& file, MultiBook<Ladder>& books) {
   if (secs > 0) {
     std::printf("throughput     %.2f M msg/s  (%.0f MB/s)\n",
                 static_cast<double>(s.messages) / secs / 1e6,
-                static_cast<double>(file.size()) / secs / (1024.0 * 1024.0));
+                static_cast<double>(file_bytes) / secs / (1024.0 * 1024.0));
   }
   std::printf("last timestamp %s  (session state '%c')\n", clock_of(s.last_timestamp).c_str(),
               s.session_state == ' ' ? '-' : s.session_state);
@@ -204,6 +245,35 @@ int run(const Options& opt, const MmapFile& file, MultiBook<Ladder>& books) {
   }
   std::printf("symbols        %s\n", commas(books.symbol_count()).c_str());
 
+  if (opt.minute_profile) {
+    // The intraday shape is a market-microstructure fact worth seeing: the
+    // opening burst, the lunchtime trough, the closing-auction wall.
+    std::uint64_t peak = 1;
+    std::size_t peak_min = 0;
+    std::uint64_t total = 0;
+    for (std::size_t i = 0; i < per_minute.size(); ++i) {
+      total += per_minute[i];
+      if (per_minute[i] > peak) {
+        peak = per_minute[i];
+        peak_min = i;
+      }
+    }
+    std::printf("\nintraday message rate (5-minute buckets, # = %s msgs)\n",
+                commas(peak * 5 / 60).c_str());
+    for (std::size_t b = 0; b + 5 <= per_minute.size(); b += 5) {
+      std::uint64_t bucket = 0;
+      for (std::size_t j = b; j < b + 5; ++j) bucket += per_minute[j];
+      if (bucket == 0) continue;
+      const int bars = static_cast<int>(bucket * 60 / (peak * 5));
+      std::printf("  %02zu:%02zu %10s ", b / 60, b % 60, commas(bucket).c_str());
+      for (int k = 0; k < bars; ++k) std::printf("#");
+      std::printf("\n");
+    }
+    std::printf("  peak minute %02zu:%02zu with %s messages (%.1fx the day's mean)\n",
+                peak_min / 60, peak_min % 60, commas(peak).c_str(),
+                static_cast<double>(peak) * 1440.0 / (total > 0 ? total : 1));
+  }
+
   const int failures = check_and_report(books, opt);
   std::printf("\nsanity         %s\n",
               failures == 0 ? "no crossed books, share conservation holds in every book"
@@ -219,11 +289,17 @@ int main(int argc, char** argv) {
     if (std::strcmp(argv[i], "--symbols") == 0 && i + 1 < argc) {
       opt.symbols = parse_symbols(argv[++i]);
     } else if (std::strcmp(argv[i], "--ladder") == 0 && i + 1 < argc) {
-      opt.dense = std::strcmp(argv[++i], "dense") == 0;
+      const char* v = argv[++i];
+      opt.dense = std::strcmp(v, "dense") == 0;
+      opt.pooled = std::strcmp(v, "pooled") == 0;
     } else if (std::strcmp(argv[i], "--depth") == 0 && i + 1 < argc) {
       opt.depth = static_cast<std::size_t>(std::atoi(argv[++i]));
     } else if (std::strcmp(argv[i], "--progress") == 0) {
       opt.progress = true;
+    } else if (std::strcmp(argv[i], "--minute-profile") == 0) {
+      opt.minute_profile = true;
+    } else if (std::strcmp(argv[i], "--io") == 0 && i + 1 < argc) {
+      opt.use_mmap = std::strcmp(argv[++i], "mmap") == 0;
     } else if (argv[i][0] != '-') {
       opt.path = argv[i];
     }
@@ -231,14 +307,18 @@ int main(int argc, char** argv) {
   if (opt.path.empty()) {
     std::fprintf(stderr,
                  "usage: replay_itch <file.itch> [--symbols AAPL,MSFT] "
-                 "[--ladder map|dense] [--depth N] [--progress]\n");
+                 "[--ladder map|pooled|dense] [--depth N] [--io stream|mmap] [--minute-profile] [--progress]\n");
     return 2;
   }
 
-  MmapFile file;
-  if (!file.open(opt.path)) {
-    std::fprintf(stderr, "error: %s\n", file.error().c_str());
-    return 2;
+  std::uint64_t file_bytes = 0;
+  {
+    std::ifstream probe(opt.path, std::ios::binary | std::ios::ate);
+    if (!probe) {
+      std::fprintf(stderr, "error: cannot open %s\n", opt.path.c_str());
+      return 2;
+    }
+    file_bytes = static_cast<std::uint64_t>(probe.tellg());
   }
 
   if (opt.dense) {
@@ -246,8 +326,12 @@ int main(int argc, char** argv) {
     // decimals, so this covers $0.0000 through $200.0000 — fine for most
     // names and deliberately explicit about the limitation.
     MultiBook<DenseLadder> books{Price{0}, Price{2000000}};
-    return run(opt, file, books);
+    return run(opt, file_bytes, books);
+  }
+  if (opt.pooled) {
+    MultiBook<PooledMapLadder> books;
+    return run(opt, file_bytes, books);
   }
   MultiBook<MapLadder> books;
-  return run(opt, file, books);
+  return run(opt, file_bytes, books);
 }
