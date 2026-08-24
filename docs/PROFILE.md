@@ -86,3 +86,32 @@ The ladder comparison:
 ./build/tools/replay_itch day.itch --ladder map   --depth 0
 ./build/tools/replay_itch day.itch --ladder dense --depth 0
 ```
+
+## Postscript: the fixes, measured on the real day
+
+Everything above was measured on the synthetic day; the real 8.25 GB NASDAQ
+file (268.7M messages, 8,892 symbols) then re-ranked the bottlenecks twice.
+
+**First surprise: I/O method stopped mattering.** The cold mmap replay ran at
+2 MB/s — demand paging with no readahead, fixed 4.3× by chunked
+`PrefetchVirtualMemory` — but the streamed reader landed at the *same*
+~0.37 M msg/s. The disk streams 200+ MB/s; the replay used 11. The actual
+bound was the working set: ~8 GB of live books plus the file fighting over
+15.5 GB of RAM. When memory is the wall, how bytes arrive is irrelevant.
+
+**So the fixes went after memory and churn instead:**
+
+| change | full-day rate |
+|---|---|
+| baseline (std::unordered_map routing, plain map ladder) | 0.37 M msg/s |
+| open-addressed order→book routing (~64 B → 16 B per live order) | 0.40 M msg/s |
+| + pooled ladder (node handles: extract, re-key, splice) | **0.45 M msg/s** |
+
+The pooled ladder — built because this profile showed 26% level churn — is
+the fastest of the three ladders on real data, +12% over the plain tree.
+Profile, hypothesis, fix, measured win: the loop this document exists for.
+
+For calibration, the same binary with a symbol filter (one book, small
+working set) parses and routes the same 268.7M messages at **6.6–7.5 M
+msg/s**: that is the parser's actual speed when memory fits, and the
+distance from 0.45 is the price of the full-day working set.

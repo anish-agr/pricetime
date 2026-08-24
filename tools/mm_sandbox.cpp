@@ -1,7 +1,7 @@
 // Runs a naive market maker against a replayed ITCH session.
 //
 //   mm_sandbox <file.itch> --symbol AAPL [--half-spread N] [--size N]
-//              [--max-position N] [--fill-model queue|optimistic]
+//              [--max-position N] [--fill-model queue|optimistic] [--tick N]
 //
 // Two fill models, and the difference between them is itself a result:
 //
@@ -116,7 +116,22 @@ struct SandboxConfig {
   Symbol symbol{"AAPL"};
   MarketMakerConfig mm;
   bool queue_model = true;
+  // The instrument's real price grid, in ITCH ticks: 100 = one cent, the
+  // NASDAQ minimum increment for displayed orders in stocks >= $1. Quotes
+  // must snap to this grid — the first real-data run quoted at sub-penny
+  // prices no displayed order can occupy, and the queue model correctly
+  // reported zero fills all day while the optimistic model "filled" 43,827
+  // times at prices that cannot exist. Tick alignment is not a detail.
+  Price tick = 100;
 };
+
+// Bids floor to the grid, asks ceil: snapping must never make a quote more
+// aggressive than the strategy asked for.
+Price snap_bid(Price p, Price tick) { return p - (((p % tick) + tick) % tick); }
+Price snap_ask(Price p, Price tick) {
+  const Price r = ((p % tick) + tick) % tick;
+  return r == 0 ? p : p + (tick - r);
+}
 
 }  // namespace
 
@@ -135,6 +150,8 @@ int main(int argc, char** argv) {
       cfg.mm.max_position = std::atoll(argv[++i]);
     } else if (std::strcmp(argv[i], "--fill-model") == 0 && i + 1 < argc) {
       cfg.queue_model = std::strcmp(argv[++i], "optimistic") != 0;
+    } else if (std::strcmp(argv[i], "--tick") == 0 && i + 1 < argc) {
+      cfg.tick = std::atoll(argv[++i]);
     } else if (argv[i][0] != '-') {
       cfg.path = argv[i];
     }
@@ -142,7 +159,7 @@ int main(int argc, char** argv) {
   if (cfg.path.empty()) {
     std::fprintf(stderr,
                  "usage: mm_sandbox <file.itch> --symbol AAPL [--half-spread N] [--size N] "
-                 "[--max-position N] [--fill-model queue|optimistic]\n");
+                 "[--max-position N] [--fill-model queue|optimistic] [--tick N]\n");
     return 2;
   }
 
@@ -190,12 +207,12 @@ int main(int argc, char** argv) {
             // Optimistic model: every print at or through our quote fills us.
             const std::uint64_t ts = rep.stats().last_timestamp;
             const Qty fill = ev.shares < cfg.mm.quote_size ? ev.shares : cfg.mm.quote_size;
-            if (ev.resting_side == Side::Bid && mm.wants_bid() &&
-                mm.bid_quote(mid_before) >= ev.price) {
-              mm.on_fill(FillEvent{Side::Bid, mm.bid_quote(mid_before), fill, ts, mid_before});
-            } else if (ev.resting_side == Side::Ask && mm.wants_ask() &&
-                       mm.ask_quote(mid_before) <= ev.price) {
-              mm.on_fill(FillEvent{Side::Ask, mm.ask_quote(mid_before), fill, ts, mid_before});
+            const Price obid = snap_bid(mm.bid_quote(mid_before), cfg.tick);
+            const Price oask = snap_ask(mm.ask_quote(mid_before), cfg.tick);
+            if (ev.resting_side == Side::Bid && mm.wants_bid() && obid >= ev.price) {
+              mm.on_fill(FillEvent{Side::Bid, obid, fill, ts, mid_before});
+            } else if (ev.resting_side == Side::Ask && mm.wants_ask() && oask <= ev.price) {
+              mm.on_fill(FillEvent{Side::Ask, oask, fill, ts, mid_before});
             }
           }
         }
@@ -219,14 +236,14 @@ int main(int argc, char** argv) {
         // new level — exactly the queue cost a real requote pays, which is
         // why quoting "at the touch, always" is not free.
         if (cfg.queue_model) {
-          const Price want_bid = mm.bid_quote(mid);
+          const Price want_bid = snap_bid(mm.bid_quote(mid), cfg.tick);
           if (mm.wants_bid() && (!our_bid.active() || our_bid.price() != want_bid)) {
             our_bid.cancel();
             our_bid.place(want_bid, Side::Bid, cfg.mm.quote_size,
                           orders_at_level(*book, Side::Bid, want_bid));
             ++requotes;
           }
-          const Price want_ask = mm.ask_quote(mid);
+          const Price want_ask = snap_ask(mm.ask_quote(mid), cfg.tick);
           if (mm.wants_ask() && (!our_ask.active() || our_ask.price() != want_ask)) {
             our_ask.cancel();
             our_ask.place(want_ask, Side::Ask, cfg.mm.quote_size,
@@ -251,8 +268,8 @@ int main(int argc, char** argv) {
   std::printf("mid updates        %s   requotes %s\n", commas(mid_updates).c_str(),
               commas(requotes).c_str());
   std::printf("\nstrategy           half-spread %" PRId64 " ticks, size %u, max position %" PRId64
-              "\n",
-              cfg.mm.half_spread_ticks, cfg.mm.quote_size, cfg.mm.max_position);
+              ", grid %" PRId64 " ticks\n",
+              cfg.mm.half_spread_ticks, cfg.mm.quote_size, cfg.mm.max_position, cfg.tick);
   std::printf("fills              %s (%s shares)\n", commas(mm.fills()).c_str(),
               commas(mm.volume()).c_str());
   std::printf("final position     %" PRId64 " shares\n", mm.position());

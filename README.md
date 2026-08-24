@@ -35,7 +35,8 @@ than subtracted:
 | book: add (steady state, ~100k resting orders) | 182 ns | 322 ns | 518 ns | 3.7 M ops/s |
 | book: cancel (steady state) | 292 ns | 527 ns | 1.08 µs | 3.7 M ops/s |
 | book: execute (aggressive add, one fill) | 231 ns | 419 ns | 637 ns | 3.6 M ops/s |
-| ITCH replay: parse + full book reconstruction | — | — | — | 1.45 M msg/s |
+| ITCH replay: full-day book build, **real NASDAQ data**, all 8,892 symbols | — | — | — | 0.45 M msg/s‡ |
+| ITCH replay: parse + route, symbol-filtered (same real day) | — | — | — | 6.6–7.5 M msg/s |
 | engine, wire-to-wire (TCP→match→TCP, loopback, busy-poll) | 13 µs | 51 µs | ~800 µs† | — |
 | engine, pipelined order flow | — | — | — | 1.77 M req/s in / 2.46 M resp/s out |
 
@@ -45,8 +46,28 @@ relative comparisons as the result and the absolute numbers as a floor.
 † The wire-to-wire tail is core starvation — busy-polling needs a core budget
 this chip does not have; blocking sockets trade the median (34 µs p50) for a
 far tighter tail (72 µs p99). Both modes ship; the trade is measured.
+‡ Working-set-bound, not parse-bound: ~8 GB of live books plus the 8.25 GB
+file streaming through 15.5 GB of RAM. The filtered row is the same parser
+when memory fits; the gap between the rows is itself a documented finding.
 
-## Five findings
+## Validated against a real NASDAQ trading day
+
+Not a synthetic claim: the pipeline replays NASDAQ's published TotalView-ITCH
+file for **December 30, 2019** — 8.25 GB, **268,744,780 messages**, 8,892
+symbols — end to end.
+
+- Parse status clean, **zero unknown order references** across the whole day:
+  one wrong byte offset in any decoder would have produced garbage references
+  within seconds, so a full day of exact routing is strong evidence the
+  decoders are byte-exact.
+- **No crossed books and share conservation holds in every one of the 8,892
+  books** (`added = executed + canceled + resting`, checked per symbol).
+- The intraday profile comes out of the replay itself: 3.7 M messages in the
+  16:00 closing-auction minute, 19.9× the day's mean.
+- And the market-maker sandbox runs against the real AAPL flow — see finding
+  6, which is the reason the sandbox exists.
+
+## Six findings
 
 The point of this repo is not that an order book exists — it is what happened
 when every folk-wisdom design choice was measured instead of assumed.
@@ -69,10 +90,13 @@ built to prove it. A benchmark that hides its own worst case is marketing.
 are right.** Microbench: ladders tie. gprof over full replay: the tree ladder
 pays **26% of runtime in level churn** (1.47M creates, 722k destroys) that
 steady-state microbenchmarks structurally cannot see. End-to-end: the tree
-*still* wins replay (1.45 vs 0.81–1.09 M msg/s), because a feed-safe dense
-ladder costs ~160 MB per symbol and the TLB pressure outweighs the churn.
-Three layers, three answers, one lesson about trusting any single
-measurement. ([docs/PROFILE.md](docs/PROFILE.md))
+*still* wins replay, because a feed-safe dense ladder costs ~160 MB per
+symbol and the TLB pressure outweighs the churn. The loop then closes: a
+third ladder policy recycles its tree nodes through C++17 node handles
+(extract/re-key/splice — zero allocator traffic after warmup, enforced by
+test), and is **the fastest of the three on the real full day**, 0.45 vs
+0.40 M msg/s. Profile → hypothesis → fix → measured win.
+([docs/PROFILE.md](docs/PROFILE.md))
 
 **4. Busy-polling halves the median and can destroy the tail.** Blocking
 sockets pay ~20 µs of scheduler wakeups per round trip; spinning recovers it
@@ -82,12 +106,25 @@ throughput at 30 k/s — batching (coalesced sends, buffered receives) raised
 it **59×** while leaving ping-pong p50 untouched. The latency/throughput
 lever every gateway has, resolved so the latency path pays nothing.
 
-**5. Ignoring queue position inflates a passive backtest by four orders of
-magnitude.** The sandbox's exact model puts our simulated order behind every
-identified resting order and fills it only when the feed shows them all gone.
-Same strategy, same data: optimistic model **86,153 fills**, queue model
-**6**. That gap is the measured price of the assumption most hobby backtests
-make silently.
+**5. Ignoring queue position inflates a passive backtest — 5.5× on real
+data.** The sandbox's exact model puts our simulated order behind every
+identified resting order (ITCH names them all) and fills it only when the
+feed shows them all gone. On the real AAPL day, the optimistic
+any-print-fills-us model reports 24,145 fills; the queue model reports
+4,391. On a synthetic day quoted inside the spread the same gap is four
+orders of magnitude (86,153 vs 6). A related lesson came free: quoting off
+the instrument's real tick grid produced sub-penny quotes that can never
+rest in AAPL's book — the queue model correctly returned **zero fills all
+day** while the optimistic model happily "filled" 43,827 times at prices
+that cannot exist. Tick alignment is not a detail.
+
+**6. The naive market maker's loss, decomposed on real flow.** Quoting AAPL
+at the touch all day: 4,391 fills, **+130 ticks/share of spread captured —
+and a net loss of $1,317**, because the mid moves −136 ticks against each
+fill within 1 ms, deepening monotonically to −182 by 1 s. That monotone
+markout curve is the signature of adverse selection by informed flow, and
+measuring it — rather than the fill count — is what separates a market-making
+backtest from a fill counter.
 
 ## What is inside
 
@@ -161,11 +198,17 @@ ctest --test-dir build -C Release --output-on-failure
 ```
 
 Real data: NASDAQ publishes full-day ITCH 5.0 samples at
-`emi.nasdaq.com/ITCH/Nasdaq ITCH/` (several GB). `replay_itch` consumes them
-directly after `gunzip`.
+`emi.nasdaq.com/ITCH/Nasdaq ITCH/` (several GB). After `gunzip`:
+
+```bash
+./build/tools/replay_itch 12302019.NASDAQ_ITCH50 --minute-profile   # the full day
+./build/tools/mm_sandbox 12302019.NASDAQ_ITCH50 --symbol AAPL --half-spread 100
+```
 
 ## Honest limitations
 
+- Validation is one venue, one day (NASDAQ, 2019-12-30). More days are a
+  download away; other venues are other protocols.
 - The engine serves one client session, one symbol: the threading
   architecture was the milestone; multi-tenancy is plumbing.
 - The Mold feed has sequencing and gap *detection* but no re-request channel.
