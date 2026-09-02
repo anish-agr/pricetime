@@ -5,3 +5,17 @@ out/
 .idea/
 *.user
 CMakeUserPresets.json
+
+# build artifacts
+*.o
+*.obj
+*.exe
+*.pdb
+*.ilk
+*.lib
+*.a
+
+# market data and run output (keep large captures out of the repo)
+*.itch
+*.NASDAQ_ITCH50
+*.NASDAQ_ITCH50.gz
