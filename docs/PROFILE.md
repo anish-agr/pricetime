@@ -1,10 +1,10 @@
 # Profiling the replay path
 
-The brief called for a flame graph of full-day replay. This environment (WSL2
+A flame graph would be the natural tool here, but this environment (WSL2
 without root) has no `perf`, so the profile below is from `gprof`
-(`-O2 -g -pg`), which answers the same question — where does replay time go —
-with call counts that a flame graph would not give. Reproduction commands for
-both are at the bottom.
+(`-O2 -g -pg`). It answers the same question, where replay time goes, and adds
+call counts that a flame graph would not give. Reproduction commands for both
+are at the bottom.
 
 Workload: 3,000,002-message synthetic ITCH day, 4 symbols, `replay_itch`,
 GCC 15 `-O2`, WSL2 on an Intel Core Ultra 5 225U.
@@ -23,15 +23,15 @@ GCC 15 `-O2`, WSL2 on an Intel Core Ultra 5 225U.
 
 ## What it says
 
-**Finding: ~26% of replay time is `std::map` node churn** — 1.47M price-level
+**Finding: ~26% of replay time is `std::map` node churn**, from 1.47M price-level
 creations and 722k destructions. The microbenchmark never showed this,
 because its steady-state workload keeps levels alive; real(istic) order flow
 constantly creates levels at new prices and empties them again. The
 microbenchmark and the profile disagree, and the profile is measuring the
 workload that matters.
 
-**So the dense ladder should win replay?** No — and this is the part worth
-remembering. Measured end-to-end on the same file, two runs each:
+**So the dense ladder should win replay?** No, and that is the part worth
+remembering. Measured end to end on the same file, two runs each:
 
 | ladder | replay throughput |
 |---|---|
@@ -39,7 +39,7 @@ remembering. Measured end-to-end on the same file, two runs each:
 | dense array | 0.81, 1.09 M msg/s |
 
 The dense ladder needs a per-symbol price range wide enough for anything the
-feed might show — here [0, $200] in ticks — which is 2M levels × 2 sides ×
+feed might show, here [0, $200] in ticks, which is 2M levels × 2 sides ×
 40 B ≈ **160 MB of ladder per symbol**, 640 MB across four books. The result
 is page-fault and TLB pressure that costs more than the map's node churn
 saves, and the first dense run (0.81) is visibly slower than the second
@@ -50,7 +50,7 @@ it dominates.
 **The layered conclusion**, which no single measurement gives:
 
 1. Microbenchmark: ladder choice is a wash (~±5% on medians).
-2. Profile: the map pays ~26% of replay in level churn — a real, visible cost.
+2. Profile: the map pays ~26% of replay in level churn, a real and visible cost.
 3. End-to-end: the map still wins replay, because the dense array's
    footprint scales with price range × symbols and that costs more.
 
@@ -60,8 +60,8 @@ pool** for the map ladder (reusing map nodes is what an allocator-aware
 the touch with re-anchoring. Both are measurable follow-ups; neither is
 assumed to win.
 
-Also visible, pleasingly: `OrderPool::alloc` — 1.47M calls, no measurable
-self time. The arena is doing exactly what it was built to do.
+Also visible: `OrderPool::alloc` takes 1.47M calls with no measurable self
+time. The arena is doing what it was built to do.
 
 ## Reproducing
 
@@ -93,9 +93,9 @@ Everything above was measured on the synthetic day; the real 8.25 GB NASDAQ
 file (268.7M messages, 8,892 symbols) then re-ranked the bottlenecks twice.
 
 **First surprise: I/O method stopped mattering.** The cold mmap replay ran at
-2 MB/s — demand paging with no readahead, fixed 4.3× by chunked
-`PrefetchVirtualMemory` — but the streamed reader landed at the *same*
-~0.37 M msg/s. The disk streams 200+ MB/s; the replay used 11. The actual
+2 MB/s, which is demand paging with no readahead, and chunked
+`PrefetchVirtualMemory` fixed that by 4.3×. But the streamed reader landed at
+the *same* ~0.37 M msg/s. The disk streams 200+ MB/s; the replay used 11. The actual
 bound was the working set: ~8 GB of live books plus the file fighting over
 15.5 GB of RAM. When memory is the wall, how bytes arrive is irrelevant.
 
@@ -107,9 +107,8 @@ bound was the working set: ~8 GB of live books plus the file fighting over
 | open-addressed order→book routing (~64 B → 16 B per live order) | 0.40 M msg/s |
 | + pooled ladder (node handles: extract, re-key, splice) | **0.45 M msg/s** |
 
-The pooled ladder — built because this profile showed 26% level churn — is
-the fastest of the three ladders on real data, +12% over the plain tree.
-Profile, hypothesis, fix, measured win: the loop this document exists for.
+The pooled ladder, built because this profile showed 26% level churn, is the
+fastest of the three ladders on real data, +12% over the plain tree.
 
 For calibration, the same binary with a symbol filter (one book, small
 working set) parses and routes the same 268.7M messages at **6.6–7.5 M

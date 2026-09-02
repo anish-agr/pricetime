@@ -19,10 +19,10 @@ across 8,892 symbols.
                      │   ┌──────────┴──────────────────────────┐           │
    order entry ──────┼─► │  matching engine (4 threads,        │ ─► ITCH   │
    (TCP, 40-byte     │   │  SPSC queues, lock-free handoff,    │    inside │
-    binary protocol) │   │  book owned by ONE thread)          │  MoldUDP64│
+    binary protocol) │   │  book owned by one thread)          │  MoldUDP64│
                      │   └─────────────────────────────────────┘  over UDP │
                      └─────────────────────────────────────────────────────┘
-        core: OrderBook<Ladder, IdMap> — both policies swappable and measured
+        core: OrderBook<Ladder, IdMap>, both policies swappable and measured
 ```
 
 ## Numbers
