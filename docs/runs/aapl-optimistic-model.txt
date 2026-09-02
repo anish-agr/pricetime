@@ -1,0 +1,33 @@
+symbol             AAPL
+fill model         optimistic
+messages replayed  268,744,780 in 40.87 s
+trade prints seen  60,543
+mid updates        152,424   requotes 0
+
+strategy           half-spread 100 ticks, size 100, max position 1000, grid 100 ticks
+fills              24,145 (1,587,774 shares)
+final position     674 shares
+peak |position|    1099 shares
+
+P&L (inventory marked at mid 3006300)
+  cash             -211502.70
+  inventory        +202624.62
+  total            -8878.08
+  per share        -0.00559
+
+decomposition
+  spread captured  +132.40 ticks/share
+  markout      1 ms  -148.81 ticks/share over 24,145 fills
+  markout     10 ms  -159.80 ticks/share over 24,145 fills
+  markout    100 ms  -170.42 ticks/share over 24,145 fills
+  markout   1000 ms  -194.51 ticks/share over 24,145 fills
+
+  Spread captured minus the adverse move is the real edge. A positive
+  capture alongside a more negative markout means the quotes are being
+  picked off by better-informed flow.
+
+fill-model caveats (read before believing any number above)
+  * Queue position is ignored: every print at or through our price
+    fills us, where a real order waits behind everyone already
+    resting at that level. Run the default queue model instead.
+  * No latency, no market impact, no fees or rebates.

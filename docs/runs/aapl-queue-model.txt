@@ -1,0 +1,37 @@
+symbol             AAPL
+fill model         queue-position (exact)
+messages replayed  268,744,780 in 40.92 s
+trade prints seen  60,543
+mid updates        152,424   requotes 169,395
+
+strategy           half-spread 100 ticks, size 100, max position 1000, grid 100 ticks
+fills              4,391 (280,061 shares)
+final position     -45 shares
+peak |position|    1083 shares
+
+P&L (inventory marked at mid 3006300)
+  cash             +12211.39
+  inventory        -13528.35
+  total            -1316.96
+  per share        -0.00470
+
+decomposition
+  spread captured  +130.05 ticks/share
+  markout      1 ms  -135.71 ticks/share over 4,391 fills
+  markout     10 ms  -147.93 ticks/share over 4,391 fills
+  markout    100 ms  -158.57 ticks/share over 4,391 fills
+  markout   1000 ms  -181.71 ticks/share over 4,391 fills
+
+  Spread captured minus the adverse move is the real edge. A positive
+  capture alongside a more negative markout means the quotes are being
+  picked off by better-informed flow.
+
+remaining model caveats (smaller than they were, still real)
+  * Once we reach the front, the aggressor that fills us ALSO fills
+    the real order it historically hit: liquidity at our level is
+    double-counted by our participation. Fixing this needs
+    counterfactual replay, which changes the question being asked.
+  * No latency: requotes happen instantly on every book change.
+  * No fees, rebates, or borrow costs.
+  Compare against --fill-model optimistic: the difference is the
+  price of ignoring queue position.

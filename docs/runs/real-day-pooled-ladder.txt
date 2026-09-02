@@ -1,0 +1,41 @@
+file           ./12302019.NASDAQ_ITCH50
+io             buffered stream
+size           8,251,407,909 bytes
+parse status   ok
+messages       268,744,780
+elapsed        597.54 s
+throughput     0.45 M msg/s  (13 MB/s)
+last timestamp 20:05:00  (session state 'C')
+book events    adds 118,631,456  execs 5,822,741  cancels 2,787,676  deletes 114,360,997  replaces 21,639,067
+shares         added 47,597,537,971  executed 711,223,674
+tape-only      non-cross trades 1,218,602
+skipped        symbol-filtered adds 0, unknown references 0
+symbols        8,892
+
+(top 12 of 8,892 books by resting shares; every book was checked)
+
+NWSA      orders 0  shares 0
+
+UEVM      orders 0  shares 0
+
+ACSG      orders 0  shares 0
+
+LOAN      orders 0  shares 0
+
+PERI      orders 0  shares 0
+
+JGH       orders 0  shares 0
+
+MCK       orders 0  shares 0
+
+NFLT      orders 0  shares 0
+
+WHG       orders 0  shares 0
+
+UN        orders 0  shares 0
+
+RYN       orders 0  shares 0
+
+ENV       orders 0  shares 0
+
+sanity         no crossed books, share conservation holds in every book

@@ -293,24 +293,24 @@ int main(int argc, char** argv) {
                 commas(mk.samples).c_str());
   }
   std::printf(
-      "\n  Spread captured minus the adverse move is the real edge. A positive\n"
-      "  capture alongside a more negative markout means the quotes are being\n"
-      "  picked off by better-informed flow.\n");
+      "\n  Spread captured minus the adverse move is the edge. A positive\n"
+      "  capture alongside a more negative markout means the quotes are\n"
+      "  being picked off by better-informed flow.\n");
 
   if (cfg.queue_model) {
     std::printf(
-        "\nremaining model caveats (smaller than they were, still real)\n"
-        "  * Once we reach the front, the aggressor that fills us ALSO fills\n"
-        "    the real order it historically hit: liquidity at our level is\n"
+        "\nremaining model caveats\n"
+        "  * Once we reach the front, the aggressor that fills us also fills\n"
+        "    the real order it historically hit, so liquidity at our level is\n"
         "    double-counted by our participation. Fixing this needs\n"
         "    counterfactual replay, which changes the question being asked.\n"
         "  * No latency: requotes happen instantly on every book change.\n"
         "  * No fees, rebates, or borrow costs.\n"
-        "  Compare against --fill-model optimistic: the difference is the\n"
-        "  price of ignoring queue position.\n");
+        "  Compare against --fill-model optimistic to see what ignoring\n"
+        "  queue position is worth.\n");
   } else {
     std::printf(
-        "\nfill-model caveats (read before believing any number above)\n"
+        "\nfill-model caveats (read before using any number above)\n"
         "  * Queue position is ignored: every print at or through our price\n"
         "    fills us, where a real order waits behind everyone already\n"
         "    resting at that level. Run the default queue model instead.\n"

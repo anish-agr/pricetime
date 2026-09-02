@@ -67,6 +67,9 @@ The pipeline replays NASDAQ's published TotalView-ITCH file for December 30,
   19.9× the day's mean.
 - The market-making sandbox runs against the real AAPL flow (see finding 6).
 
+The unedited output of these runs is in [docs/runs/](docs/runs/), with the
+command that produced each one.
+
 ## Findings
 
 Six results from measuring design choices instead of assuming them.
