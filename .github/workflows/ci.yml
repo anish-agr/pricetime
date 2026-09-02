@@ -15,7 +15,7 @@ jobs:
         os: [windows-latest, ubuntu-latest]
         config: [Debug, Release]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Configure
         run: cmake -B build -DCMAKE_BUILD_TYPE=${{ matrix.config }} -DPRICETIME_WERROR=ON
@@ -61,7 +61,7 @@ jobs:
     name: ubuntu / asan+ubsan
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Configure
         run: >
@@ -81,7 +81,7 @@ jobs:
     name: ubuntu / tsan
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # The SPSC queue between the network and matching threads is the only
       # lock-free code in the repo. Its memory ordering cannot be validated by
