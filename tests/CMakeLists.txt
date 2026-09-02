@@ -38,4 +38,11 @@ find_package(Threads REQUIRED)
 target_link_libraries(pricetime_tests
   PRIVATE pricetime::pricetime pricetime_warnings doctest::doctest Threads::Threads)
 
+# doctest specializes std::tuple, which MSVC 19.44+ reports as C5285. It is a
+# third-party header and this build treats warnings as errors, so the
+# diagnostic is turned off for the test target only.
+if(MSVC)
+  target_compile_options(pricetime_tests PRIVATE /wd5285)
+endif()
+
 add_test(NAME pricetime_tests COMMAND pricetime_tests)
