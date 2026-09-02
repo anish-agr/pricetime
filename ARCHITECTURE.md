@@ -124,7 +124,7 @@ shows: p99.9 on passive add is 407 ns for open addressing versus 8761 ns for
 unpredictably on individual operations. For a system judged on tail latency,
 that is the more damning number.
 
-### The dense ladder has a pathology worth publishing
+### The dense ladder has a bad worst case
 
 `bench_book.cpp` includes an adversarial scenario built specifically to defeat
 the dense ladder: a book whose only active levels sit at opposite ends of the
