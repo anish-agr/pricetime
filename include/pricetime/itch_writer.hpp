@@ -20,7 +20,7 @@ namespace pricetime::itch {
 // It earns its place in the library rather than the tests for three reasons:
 // it makes the whole pipeline testable without a multi-gigabyte download, it
 // can construct situations a captured day may not contain (replace chains,
-// executions that empty a level, over-consumption), and M3's market-data
+// executions that empty a level, over-consumption), and the engine's market-data
 // feed needs to emit ITCH-shaped events anyway.
 class Writer {
  public:

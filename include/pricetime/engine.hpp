@@ -23,7 +23,7 @@
 namespace pricetime {
 
 // The matching engine as a server. Single symbol, single client session —
-// the threading structure is the point of this milestone, not multi-tenancy.
+// the threading structure is the point here, not multi-tenancy.
 //
 //   TCP in ──► recv thread ──SPSC──► match thread ──SPSC──► send thread ──► TCP out
 //                                        │
@@ -34,7 +34,7 @@ namespace pricetime {
 //  - The matching thread owns the book EXCLUSIVELY. No lock ever guards the
 //    book, because no other thread touches it; the SPSC queues are the only
 //    synchronization in the process. This is the standard exchange
-//    architecture in miniature, and the reason M1 could stay single-threaded
+//    architecture in miniature, and the reason the book could stay single-threaded
 //    without that being a dead end.
 //  - Receive and send are separate threads so a slow reader (the client not
 //    draining responses) exerts backpressure through the response queue

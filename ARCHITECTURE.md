@@ -106,7 +106,7 @@ traded band, so the whole structure fits in L2. It made no difference. The
 footprint was not the bottleneck either.
 
 The honest conclusion: **for this access pattern, ladder choice is not where
-the time goes.** That may change with real ITCH data (M2), where the level
+the time goes.** That may change with real ITCH data, where the level
 count and access distribution are set by the market rather than by my
 generator, and it would change at much higher order rates.
 
@@ -167,7 +167,7 @@ after **every** operation, so a divergence is reported on the op that caused
 it.
 
 **Golden replay.** A seeded 100k-op stream must hash to a pinned constant on
-every platform, compiler, and policy. This earns its keep: the M1.5 refactor
+every platform, compiler, and policy. This earns its keep: the id-map refactor
 replaced the id map, rewrote the order pool, and added four order types, and
 the constant never moved — positive evidence that none of it changed matching
 semantics.
@@ -193,7 +193,7 @@ intrusive chain, and the test enforces it.
 - **No self-trade prevention, no auctions, no halts, no odd-lot rules.** Real
   exchanges have all of these.
 
-## 7. Feed reconstruction (M2)
+## 7. Feed reconstruction
 
 Rebuilding a book from ITCH is not the same problem as matching, and
 conflating the two is the mistake that makes a replay engine silently wrong.
@@ -246,7 +246,7 @@ spec, so their agreement is meaningful evidence — but two independent
 implementations can still share a misreading of the same document, and only
 real data settles it.
 
-## 8. Concurrency (M3)
+## 8. Concurrency
 
 The SPSC queue is the only lock-free code in the repo, and the only component
 whose correctness a single-threaded test genuinely cannot establish.
@@ -270,11 +270,11 @@ never been observed failing for the right reason is not evidence.
 
 ### The engine as a server
 
-The full M3 shape is four threads joined only by the SPSC queues — recv →
+The engine is four threads joined only by the SPSC queues — recv →
 match → send, plus a market-data stage — with the book owned exclusively by
 the match thread. No lock ever guards the book because no other thread
 touches it; this is the standard exchange architecture in miniature, and the
-reason M1 could stay single-threaded without that being a dead end.
+reason the book could stay single-threaded without that being a dead end.
 
 Measurement drove three design changes worth recording:
 
@@ -308,7 +308,7 @@ inbound data sends RST — which discards the undelivered stream, costing the
 engine the session's tail. The engine was correct; the test now drains
 through a rejected-sentinel flush, the way a real client would quiesce.
 
-## 9. Strategy measurement (M4)
+## 9. Strategy measurement
 
 The sandbox exists to measure *why* a naive quoter loses money, not to claim
 one makes money.

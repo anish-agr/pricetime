@@ -9,7 +9,7 @@ namespace pricetime {
 
 // A single book operation, decoupled from wherever it came from.
 //
-// This is the seam that makes M2 tractable: an ITCH 5.0 parser becomes just
+// This is the seam that makes the ITCH pipeline tractable: an ITCH 5.0 parser becomes just
 // another producer of Ops, and the replay driver, the property tests, and the
 // benchmark all consume the same type. It also means a failing random stream
 // can be serialized, shrunk, and replayed verbatim.

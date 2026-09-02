@@ -26,8 +26,8 @@ inline constexpr std::size_t kCacheLine = 64;
 // Wait-free single-producer / single-consumer ring buffer.
 //
 // This is the queue between the network thread and the matching thread in
-// M3. Exactly one thread may push and exactly one may pop; that restriction
-// is what makes the whole thing work without a single lock or CAS.
+// the engine. Exactly one thread may push and exactly one may pop; that
+// restriction is what makes the whole thing work without a lock or CAS.
 //
 // Three details carry all the correctness:
 //

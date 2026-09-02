@@ -35,7 +35,7 @@ struct Depth {
   std::vector<DepthLevel> asks;
 };
 
-// Price-time-priority limit order book. Single-threaded by design (M1).
+// Price-time-priority limit order book. Single-threaded by design.
 //
 // Two compile-time policies, both benchmarked head-to-head:
 //   Ladder — price -> Level lookup and best-price tracking:
@@ -57,7 +57,7 @@ struct Depth {
 // replace() is ITCH-style: the new order is validated completely, then the old
 // one is canceled and the remainder entered as a brand-new order (new id, new
 // time priority). A replace priced through the book executes like any
-// aggressive add. There is no in-place "reduce keeps priority" modify in M1;
+// aggressive add. There is no in-place "reduce keeps priority" modify here;
 // that is an OUCH-style extension.
 template <class Ladder, class IdMap = OpenAddressIdMap>
 class OrderBook {

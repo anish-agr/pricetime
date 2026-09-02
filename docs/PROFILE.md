@@ -24,7 +24,7 @@ GCC 15 `-O2`, WSL2 on an Intel Core Ultra 5 225U.
 ## What it says
 
 **Finding: ~26% of replay time is `std::map` node churn** — 1.47M price-level
-creations and 722k destructions. The M1 microbenchmark never showed this,
+creations and 722k destructions. The microbenchmark never showed this,
 because its steady-state workload keeps levels alive; real(istic) order flow
 constantly creates levels at new prices and empties them again. The
 microbenchmark and the profile disagree, and the profile is measuring the
@@ -44,7 +44,7 @@ feed might show — here [0, $200] in ticks — which is 2M levels × 2 sides ×
 is page-fault and TLB pressure that costs more than the map's node churn
 saves, and the first dense run (0.81) is visibly slower than the second
 (1.09) because it pays the initial page-faulting. On one warm single-symbol
-book (the M1 microbench) this cost is invisible; across a multi-symbol feed
+book (the microbenchmark) this cost is invisible; across a multi-symbol feed
 it dominates.
 
 **The layered conclusion**, which no single measurement gives:

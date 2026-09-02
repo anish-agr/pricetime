@@ -1,4 +1,4 @@
-// M1 latency benchmark: per-op latency histograms for the order book, run
+// Latency benchmark: per-op latency histograms for the order book, run
 // head-to-head on both ladder policies.
 //
 // Methodology (also in the README):
@@ -335,7 +335,7 @@ int main(int argc, char** argv) {
     sink_map = run_ladder("map", cfg, rows,
                           [] { return OrderBook<MapLadder, OpenAddressIdMap>{}; });
   }
-  // Same ladder, different id map: isolates the M1.5 change.
+  // Same ladder, different id map: isolates the id-map change.
   if (cfg.run_stdmap_id) {
     run_ladder("d+std", cfg, rows,
                [] { return OrderBook<DenseLadder, StdIdMap>{kDenseMin, kDenseMax}; });
