@@ -96,8 +96,8 @@ void check_invariants(const OrderBook<Ladder>& book) {
 // Deterministic random op stream: 60% add / 30% cancel / 10% replace.
 // Every RNG draw happens unconditionally in a fixed order, and the live-id
 // list evolves identically on every replay, so a given seed produces exactly
-// the same op sequence — the foundation of the determinism and cross-ladder
-// differential tests. mt19937_64's output sequence is fixed by the standard;
+// the same op sequence, which the determinism and cross-ladder differential
+// tests depend on. mt19937_64's output sequence is fixed by the standard;
 // no std distributions are used because their algorithms are not.
 template <class Ladder>
 class StreamRunner {

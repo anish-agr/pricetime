@@ -87,8 +87,8 @@ struct Options {
 };
 
 // Walks every book and verifies the properties a correctly reconstructed
-// exchange book must have — a crossed book or broken share conservation is
-// the canonical signal that reconstruction logic is wrong. EVERY book is
+// exchange book must have: a crossed book or broken share conservation is
+// the usual signal that reconstruction logic is wrong. Every book is
 // checked; on a full-day file with thousands of symbols only the most active
 // are printed, because a nine-thousand-line dump helps no one.
 template <class Books>
@@ -323,8 +323,8 @@ int main(int argc, char** argv) {
 
   if (opt.dense) {
     // A dense ladder needs a bounded range. ITCH prices are 4 implied
-    // decimals, so this covers $0.0000 through $200.0000 — fine for most
-    // names and deliberately explicit about the limitation.
+    // decimals, so this covers $0.0000 through $200.0000, which is fine for
+    // most names. The limit is deliberate and stated here.
     MultiBook<DenseLadder> books{Price{0}, Price{2000000}};
     return run(opt, file_bytes, books);
   }

@@ -4,7 +4,7 @@
 // Methodology (also in the README):
 //  - thread pinned to one core; invariant-TSC timestamps around each op
 //  - TSC calibrated against steady_clock; timer overhead measured and printed,
-//    NOT subtracted from the reported numbers
+//    not subtracted from the reported numbers
 //  - percentiles are exact (full sorted sample sets, no binning)
 //  - inputs are generated outside the timed window (splitmix64)
 //  - throughput is wall-clock and therefore INCLUDES sampling overhead
@@ -219,7 +219,7 @@ std::uint64_t run_ladder(const char* ladder_name, const Config& cfg,
 // so that scan is a step or two. This scenario builds the opposite: a book
 // whose only two active levels sit at opposite ends of the configured price
 // range, and repeatedly empties the best one. Every fill then walks the whole
-// range. The tree ladder does not care — it is O(log L) regardless.
+// range. The tree ladder does not care; it is O(log L) regardless.
 //
 // A real deployment bounds this by sizing the price range to the instrument
 // rather than to the representable universe, but the pathology is real and
@@ -362,8 +362,8 @@ int main(int argc, char** argv) {
               "%s\n",
               sink_dense, sink_map,
               cfg.run_dense && cfg.run_map
-                  ? (sink_dense == sink_map ? " — ladders agree on the bench stream"
-                                            : " — LADDERS DISAGREE (bug!)")
+                  ? (sink_dense == sink_map ? "  ladders agree on the bench stream"
+                                            : "  ladders DISAGREE (bug)")
                   : "");
   return cfg.run_dense && cfg.run_map && sink_dense != sink_map ? 1 : 0;
 }

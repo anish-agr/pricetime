@@ -156,7 +156,7 @@ TEST_CASE("engine loopback: full session over real sockets") {
     CHECK(resp.qty == 25);  // shares actually removed
   }
 
-  // Replace onto the other side of the spread: fully fills against nothing —
+  // Replace onto the other side of the spread: fully fills against nothing,
   // rests, then gets canceled.
   {
     wire::Request r;
@@ -202,7 +202,7 @@ TEST_CASE("engine loopback: full session over real sockets") {
   CHECK(engine.book_after_shutdown().counters().traded_qty == 40);
 
   // The feed said everything the book did, so a book rebuilt purely from the
-  // MoldUDP64 stream must fingerprint identically to the engine's own — and
+  // MoldUDP64 stream must fingerprint identically to the engine's own, and
   // the sequence numbers must account for every message with no gaps.
   MultiBook<MapLadder> md_books;
   itch::Replayer<MapLadder> md_rep(md_books);
@@ -277,7 +277,7 @@ TEST_CASE("engine loopback: sustained two-sided flow keeps engine and feed in ag
 
   // Drain before disconnecting. Crossing orders produce three responses (ack
   // plus both sides of the fill) while the loop above read only one per
-  // request, so requests can still be in flight here — and closing a socket
+  // request, so requests can still be in flight here, and closing a socket
   // with unread inbound data sends RST, which on Windows discards the
   // undelivered stream and cost the engine the tail of the session (observed
   // as 582/600 requests, roughly one run in ten). Responses are strictly

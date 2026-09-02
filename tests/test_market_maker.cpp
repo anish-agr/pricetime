@@ -122,7 +122,7 @@ TEST_CASE("peak absolute position tracks the worst exposure, not the final one")
 TEST_CASE("markout detects adverse selection") {
   MarketMaker mm;
   mm.on_mid(1000, 0);
-  // We buy at 995 when the mid is 1000 — 5 ticks of apparent edge.
+  // We buy at 995 when the mid is 1000, so 5 ticks of apparent edge.
   mm.on_fill(FillEvent{Side::Bid, 995, 100, 100, 1000});
   // The mid then collapses: we were bought into by informed flow.
   mm.on_mid(990, 200);

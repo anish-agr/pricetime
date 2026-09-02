@@ -38,14 +38,14 @@ struct ReplayStats {
 //    engine; these messages describe the book that resulted. Feeding them to
 //    add_limit() would re-match orders that were never meant to cross and the
 //    reconstruction would diverge on the first busy symbol.
-//  - Execute / cancel / delete / replace messages carry ONLY an order
-//    reference — no symbol. The order-to-book index in MultiBook is what
+//  - Execute / cancel / delete / replace messages carry only an order
+//    reference, with no symbol. The order-to-book index in MultiBook is what
 //    makes them routable.
 //  - An unknown reference is normal, not an error, whenever a symbol filter
 //    is active: the file is full of orders belonging to symbols we chose not
 //    to track. It is counted, not warned about.
 //  - 'P' (non-cross trade) messages report trades of orders that were never
-//    displayed, so they must NOT touch the book at all. Applying them is a
+//    displayed, so they must not touch the book at all. Applying them is a
 //    classic double-count bug.
 template <class Ladder, class IdMap = OpenAddressIdMap>
 class Replayer {

@@ -12,18 +12,18 @@ namespace pricetime::wire {
 // pricetime's order-entry protocol: what a client speaks to the matching
 // engine over TCP.
 //
-// Design choices, and why:
+// Notes on the format:
 //
-//  - FIXED-SIZE messages, 40 bytes in both directions. A stream protocol
+//  - Fixed-size messages, 40 bytes in both directions. A stream protocol
 //    needs framing; a fixed size makes framing free (read exactly 40 bytes)
 //    and the decode branchless. The handful of bytes a variable-length
 //    encoding would save is noise next to the syscall that carries it.
-//  - LITTLE-endian, deliberately unlike ITCH. This protocol only ever runs
+//  - Little-endian, unlike ITCH. This protocol only ever runs
 //    between our own processes on little-endian hosts, so byte order should
 //    cost nothing; ITCH is big-endian because it says so, and it is decoded,
 //    not imitated, at this boundary. Encoding is still explicit byte
-//    assembly — never a struct memcpy — so the format is defined by this
-//    file, not by whatever a compiler chose to pad.
+//    assembly rather than a struct memcpy, so the format is defined by this
+//    file and not by whatever a compiler chose to pad.
 //  - The last two bytes of every message are a magic tag. TCP guarantees
 //    order, not alignment with our reads after a bug: if a desync ever
 //    happens, the magic turns "plausible garbage forever" into an error at

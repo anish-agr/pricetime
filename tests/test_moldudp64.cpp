@@ -11,8 +11,8 @@ using namespace pricetime;
 
 namespace {
 
-// A framed ITCH message from the writer, with the 2-byte prefix stripped —
-// the payload shape Mold blocks carry.
+// A framed ITCH message from the writer, with the 2-byte prefix stripped,
+// which is the payload shape Mold blocks carry.
 std::vector<std::uint8_t> one_message() {
   itch::Writer w;
   w.add_order(123, 7, Side::Bid, 100, Symbol("TEST"), 999900);

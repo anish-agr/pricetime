@@ -10,14 +10,13 @@
 //
 // A UDP datagram carries:
 //   session   10 bytes, alphanumeric, space-padded
-//   sequence   8 bytes, big-endian — sequence number of the FIRST message
-//   count      2 bytes, big-endian — messages in this packet
+//   sequence   8 bytes, big-endian, sequence number of the first message
+//   count      2 bytes, big-endian, messages in this packet
 // followed by `count` blocks of [2-byte big-endian length][message].
 //
-// The sequence number is the entire point. UDP loses packets silently; with
+// Sequencing is the reason for the wrapper. UDP loses packets silently; with
 // every message numbered, a receiver knows exactly what it missed and how
-// much, which is what makes a re-request channel possible at all. A feed
-// without sequencing does not tell you it is lying to you.
+// much, which is what a re-request channel needs.
 //
 // Two special counts, per spec: 0x0000 is a heartbeat (sequence = next
 // expected, lets receivers detect gaps during silence), 0xFFFF announces

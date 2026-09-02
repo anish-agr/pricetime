@@ -10,8 +10,8 @@
 #if defined(_MSC_VER)
 #pragma warning(push)
 // C4324: "structure was padded due to alignment specifier". The padding is
-// the entire point here — it is what keeps the producer's and consumer's
-// indices off each other's cache lines — so the warning is noise.
+// deliberate: it keeps the producer's and consumer's indices off each
+// other's cache lines.
 #pragma warning(disable : 4324)
 #endif
 
@@ -27,13 +27,13 @@ inline constexpr std::size_t kCacheLine = 64;
 //
 // This is the queue between the network thread and the matching thread in
 // the engine. Exactly one thread may push and exactly one may pop; that
-// restriction is what makes the whole thing work without a lock or CAS.
+// restriction removes the need for a lock or a CAS.
 //
-// Three details carry all the correctness:
+// Three details matter:
 //
 //  1. Memory ordering. The producer writes the slot, then publishes with a
 //     release store to `head_`. The consumer acquires `head_`, and that
-//     acquire/release pair is what makes the slot's contents visible. Using
+//     acquire/release pair makes the slot's contents visible. Using
 //     relaxed ordering on the index would compile and run and pass casual
 //     tests, then tear data on a weakly ordered machine (ARM) or under an
 //     aggressive optimizer. The stress test below is run under ThreadSanitizer
@@ -41,7 +41,7 @@ inline constexpr std::size_t kCacheLine = 64;
 //
 //  2. False sharing. The producer's index and the consumer's index sit on
 //     separate cache lines. Without the padding, every push invalidates the
-//     line the consumer is reading and vice versa — the two threads ping-pong
+//     line the consumer is reading and vice versa. The two threads ping-pong
 //     one cache line and throughput collapses by an order of magnitude, with
 //     no visible bug to explain it.
 //

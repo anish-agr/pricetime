@@ -11,15 +11,15 @@ namespace pricetime {
 // Arena plus free list for Order nodes. Nodes live in fixed-size chunks that
 // are never moved or freed, so Order* stay valid for the pool's lifetime; a
 // fresh chunk is one allocation per kChunkSize orders. (std::deque would be
-// the obvious stand-in, but MSVC's deque uses tiny blocks — one heap
-// allocation per Order-sized element — which puts an allocator call on the
+// the obvious stand-in, but MSVC's deque uses tiny blocks, one heap
+// allocation per Order-sized element, which puts an allocator call on the
 // hot path.)
 //
 // The free list is intrusive: released nodes are chained through their own
 // `next` pointer, so recycling needs no side storage and cannot allocate. An
 // earlier version kept a std::vector<Order*> of free nodes, and the
 // zero-allocation test in tests/test_alloc.cpp caught it growing on the hot
-// path — the free list was itself allocating while handing out "free" memory.
+// path: the free list was itself allocating while handing out free nodes.
 // Recycling is LIFO, which keeps the most recently touched nodes hot in cache.
 class OrderPool {
  public:

@@ -9,7 +9,7 @@ namespace pricetime::test {
 //
 // Why bother: latency numbers from a shared CI runner are noise, so most
 // projects simply cannot regression-test performance. Allocation counts are
-// different — they are deterministic, machine-independent, and a heap call on
+// different: they are deterministic, machine-independent, and a heap call on
 // the matching hot path is exactly the kind of regression that silently
 // destroys tail latency. This turns "the hot path does not allocate" from a
 // comment into an assertion CI can enforce.

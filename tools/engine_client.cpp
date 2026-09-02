@@ -6,12 +6,12 @@
 // for the ack (which echoes the stamp), read the TSC again. The difference is
 // the full round trip: client encode -> kernel -> TCP -> engine recv thread ->
 // SPSC -> match -> SPSC -> send thread -> TCP -> kernel -> client decode.
-// Client and server read the same invariant TSC, so no clock sync is needed —
+// Client and server read the same invariant TSC, so no clock sync is needed,
 // which is also why this measurement is only valid on one machine.
 //
 // Loopback numbers measure the ENGINE STACK, not a network: two kernel
 // crossings per direction and zero wire time. They are directly comparable
-// run to run, and are an honest floor for what the engine adds on top of
+// run to run, and are a floor for what the engine adds on top of
 // whatever network carries it. They are not a claim about any real link.
 //
 // Throughput mode pipelines: a reader thread drains responses while the main

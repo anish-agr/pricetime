@@ -16,7 +16,7 @@ namespace pricetime::itch {
 //
 // Why this exists when mmap_file.hpp already does: mmap is not free. Mapping
 // keeps every touched page in the process working set, so replaying a file
-// larger than RAM makes the file fight the order books for memory — measured
+// larger than RAM makes the file fight the order books for memory, measured
 // on the real 8.25 GB NASDAQ day against ~4 GB of books in 15.5 GB of RAM,
 // the mapped replay crawled at 10 MB/s on a disk that streams at 200+, even
 // with explicit prefetching. A read() loop through a 32 MB buffer never

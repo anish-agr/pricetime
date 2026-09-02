@@ -7,13 +7,12 @@
 //
 //  - "optimistic": any trade printing at or through our quote fills us.
 //    This is the model most hobby backtests use, silently.
-//  - "queue" (default): our order joins the BACK of the queue at its price,
+//  - "queue" (default): our order joins the back of the queue at its price,
 //    behind every share already resting there. The feed identifies each of
 //    those orders, so their departures are tracked exactly; we can only be
-//    filled once everyone ahead of us has left. Same strategy, same data —
-//    the gap between the two models measures how much the optimistic
-//    assumption was worth, which is the single largest lie a passive
-//    backtest tells.
+//    filled once everyone ahead of us has left. Same strategy, same data, so
+//    the gap between the two models measures what the optimistic assumption
+//    was worth.
 #include <chrono>
 #include <cinttypes>
 #include <cstdio>
@@ -93,7 +92,7 @@ OrderEvent peek_event(Books& books, const std::uint8_t* m) {
   return ev;
 }
 
-// Snapshot of (id -> open qty) for every order resting at `price` — the queue
+// Snapshot of (id -> open qty) for every order resting at `price`, the queue
 // our simulated order joins behind. Walks best -> worst and stops as soon as
 // the target price has been passed.
 template <class Book>
@@ -118,7 +117,7 @@ struct SandboxConfig {
   bool queue_model = true;
   // The instrument's real price grid, in ITCH ticks: 100 = one cent, the
   // NASDAQ minimum increment for displayed orders in stocks >= $1. Quotes
-  // must snap to this grid — the first real-data run quoted at sub-penny
+  // must snap to this grid. The first real-data run quoted at sub-penny
   // prices no displayed order can occupy, and the queue model correctly
   // reported zero fills all day while the optimistic model "filled" 43,827
   // times at prices that cannot exist. Tick alignment is not a detail.
@@ -233,8 +232,8 @@ int main(int argc, char** argv) {
 
         // Re-quote: place or move each side to its desired price. Moving
         // means abandoning the old queue spot and joining the back of the
-        // new level — exactly the queue cost a real requote pays, which is
-        // why quoting "at the touch, always" is not free.
+        // new level, exactly the queue cost a real requote pays, which is
+        // why requoting at the touch on every tick is not free.
         if (cfg.queue_model) {
           const Price want_bid = snap_bid(mm.bid_quote(mid), cfg.tick);
           if (mm.wants_bid() && (!our_bid.active() || our_bid.price() != want_bid)) {

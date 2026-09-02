@@ -45,7 +45,7 @@ Writer make_stream(int messages) {
 
 }  // namespace
 
-// The stitch is the whole point: with a chunk far smaller than the file,
+// With a chunk far smaller than the file,
 // nearly every message straddles a boundary, and the stream must deliver
 // byte-for-byte what the one-shot reader delivers.
 TEST_CASE("stream reader matches the in-memory reader across tiny chunks") {

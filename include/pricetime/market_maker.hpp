@@ -12,23 +12,23 @@ namespace pricetime {
 //
 // The strategy: quote a fixed number of ticks either side of the mid, skewing
 // quotes against the current inventory so the position mean-reverts. That is
-// about the simplest thing that can be called market making, and the point is
-// not that it works — it is that the P&L decomposition below shows *where* a
-// naive quoter bleeds.
+// about the simplest thing that can be called market making. It is not meant
+// to be profitable; the P&L decomposition below is there to show where a
+// naive quoter loses money.
 //
-// Accounting notes that matter for honesty:
+// Accounting notes:
 //
 //  - Cash and position are integers. Cash is in price-ticks x shares, and is
 //    converted only at the reporting boundary. Accumulating P&L in a double
 //    across hundreds of thousands of fills loses cents to rounding, and cents
-//    are the entire margin of a market-making strategy.
+//    are most of the margin in a market-making strategy.
 //  - Mark-to-market uses the mid, not the last trade. Marking at last trade
 //    lets a single print on the far side flatter or wreck the reported P&L.
 //  - Realized and unrealized are reported separately, because a strategy that
 //    looks profitable while accumulating inventory is usually just short
 //    volatility and has not paid for it yet.
 struct FillEvent {
-  Side side = Side::Bid;  // the side OUR order was on: Bid = we bought
+  Side side = Side::Bid;  // the side our order was on: Bid = we bought
   Price price = 0;
   Qty qty = 0;
   std::uint64_t timestamp = 0;
@@ -43,9 +43,9 @@ struct MarketMakerConfig {
 };
 
 // Markout: where the mid went after a fill. The core measure of adverse
-// selection — if the mid consistently moves against us right after we trade,
-// we are being picked off by better-informed flow, and no amount of spread
-// capture will save the strategy.
+// selection: if the mid consistently moves against us right after we trade,
+// we are being picked off by better-informed flow, and spread capture alone
+// will not save the strategy.
 struct Markout {
   std::uint64_t horizon_ns = 0;
   double mean_ticks = 0;  // signed: positive = the market moved our way
@@ -106,7 +106,7 @@ class MarketMaker {
     return position_ * static_cast<std::int64_t>(mark);
   }
 
-  // Largest absolute position held, a blunt but honest risk measure.
+  // Largest absolute position held; a blunt risk measure.
   [[nodiscard]] std::int64_t peak_abs_position() const {
     std::int64_t peak = 0;
     std::int64_t pos = 0;

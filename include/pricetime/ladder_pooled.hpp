@@ -12,7 +12,7 @@
 
 namespace pricetime {
 
-// Tree ladder with node recycling — the fix the replay profile asked for.
+// Tree ladder with node recycling, the fix suggested by the replay profile.
 //
 // Profiling full-day replay (docs/PROFILE.md) put 26% of runtime inside
 // std::map node churn: real order flow creates a price level and empties it
@@ -22,8 +22,8 @@ namespace pricetime {
 //
 // This ladder keeps the tree's O(active-levels) footprint and unbounded
 // price range, and removes the churn using C++17 node handles: when a level
-// empties, its node is extract()ed — detached from the tree WITHOUT passing
-// through the allocator — and parked in a cache. The next level creation
+// empties, its node is extract()ed, detached from the tree without passing
+// through the allocator, and parked in a cache. The next level creation
 // re-keys a parked node and splices it back in. After warmup, level churn
 // touches the allocator exactly zero times, and the zero-allocation test
 // enforces that with a replaced operator new.
@@ -105,7 +105,7 @@ class PooledMapLadder {
   static void park(Map& m, Cache& cache, Price p) {
     auto nh = m.extract(p);
     if (!nh.empty() && cache.size() < kMaxCached) cache.push_back(std::move(nh));
-    // A dropped handle frees its node on destruction — the bounded case.
+    // A dropped handle frees its node on destruction, the bounded case.
   }
 
   template <class Map, class F>

@@ -1,6 +1,6 @@
 // The strongest correctness test in the repo: the real book, in every policy
 // combination, must agree with an independently written naive model on both
-// the execution stream and the resulting book state — op by op.
+// the execution stream and the resulting book state, op by op.
 #include <doctest/doctest.h>
 
 #include <cstdint>
@@ -107,7 +107,7 @@ TEST_CASE("reference differential: map ladder + open-address id map") {
 }
 
 // A narrow band makes almost every add cross, so the stream is dominated by
-// multi-level sweeps, level exhaustion, and best-price recomputation — the
+// multi-level sweeps, level exhaustion, and best-price recomputation, the
 // paths where the dense ladder's rescan and the map's erase behave least alike.
 TEST_CASE("reference differential: heavy-crossing stream") {
   OrderBook<DenseLadder, OpenAddressIdMap> fast{kMin, kMax};

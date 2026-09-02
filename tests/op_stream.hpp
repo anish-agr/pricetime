@@ -10,7 +10,7 @@ namespace pricetime::test {
 
 // Generates a deterministic Op sequence with no book involved. Because the
 // stream is fully materialized before anything consumes it, every book under
-// test provably sees byte-identical input — unlike a generator that reacts to
+// test provably sees byte-identical input, unlike a generator that reacts to
 // a book's own accept/reject decisions.
 //
 // The mix deliberately includes ops that must be rejected (stale cancels,
@@ -57,7 +57,7 @@ class OpStreamGenerator {
   }
 
   // Targets a plausibly-live id, but reaches back far enough that many picks
-  // are already gone — those must be rejected identically by every book.
+  // are already gone; those must be rejected identically by every book.
   OrderId gen_target() {
     if (next_id_ <= 1) return 1;
     const std::uint64_t span = next_id_ - 1 < 512 ? next_id_ - 1 : 512;

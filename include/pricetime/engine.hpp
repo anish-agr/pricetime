@@ -22,27 +22,27 @@
 
 namespace pricetime {
 
-// The matching engine as a server. Single symbol, single client session —
-// the threading structure is the point here, not multi-tenancy.
+// The matching engine as a server. Single symbol, single client session;
+// the threading structure is what this is for, not multi-tenancy.
 //
 //   TCP in ──► recv thread ──SPSC──► match thread ──SPSC──► send thread ──► TCP out
 //                                        │
 //                                        └─────SPSC──► md thread ──► UDP (ITCH)
 //
-// Why this shape:
+// Notes on the structure:
 //
-//  - The matching thread owns the book EXCLUSIVELY. No lock ever guards the
+//  - The matching thread owns the book outright. No lock ever guards the
 //    book, because no other thread touches it; the SPSC queues are the only
 //    synchronization in the process. This is the standard exchange
-//    architecture in miniature, and the reason the book could stay single-threaded
-//    without that being a dead end.
+//    architecture in miniature, and the reason the book itself can stay
+//    single-threaded without that being a dead end.
 //  - Receive and send are separate threads so a slow reader (the client not
 //    draining responses) exerts backpressure through the response queue
 //    without ever stalling message intake or matching.
 //  - Market data goes out as ITCH 5.0 messages, each in its own framed UDP
 //    datagram. Not ITCH-"style": the actual encoding, produced by the same
 //    Writer the tests use. Anything that can read a NASDAQ file can read
-//    this feed — including our own replayer, which is how the feed-integrity
+//    this feed, including the replayer here, which is how the feed-integrity
 //    test works: a book rebuilt purely from the UDP stream must hash
 //    identically to the engine's own.
 //
@@ -168,7 +168,7 @@ class Engine {
     if (cfg_.busy_poll) conn_.set_busy_poll();
     // Buffered intake: one recv() may deliver many pipelined messages, and
     // paying one syscall per 40-byte message caps the whole engine at the
-    // syscall rate — the first throughput run measured exactly that. A burst
+    // syscall rate; the first throughput run measured exactly that. A burst
     // costs one syscall for up to 256 messages; a lone message still arrives
     // with single-message latency because recv returns whatever is there.
     std::uint8_t buf[wire::kMessageSize * 256];
@@ -279,7 +279,7 @@ class Engine {
 
     // Market data shows only DISPLAYED quantity, exactly as NASDAQ's feed
     // does: the executed portion of an aggressive order never appears on the
-    // add/replace message — it already appeared as executions against the
+    // add/replace message: it already appeared as executions against the
     // resting side. Emitting the full entered quantity here is the bug that
     // makes a feed-reconstructed book silently diverge from the engine's,
     // which is precisely what the feed-integrity test checks.

@@ -2,7 +2,7 @@
 
 // Minimal blocking sockets, Windows + POSIX. Just enough for the engine: a
 // TCP listener, a TCP stream with send-all/recv-all, and UDP send/receive.
-// Blocking I/O is a deliberate choice at this scale — the engine dedicates a
+// Blocking I/O is a deliberate choice at this scale: the engine dedicates a
 // thread to each direction, so readiness APIs (epoll/IOCP) would add latency
 // and complexity for exactly zero benefit until there are many clients.
 
@@ -92,7 +92,7 @@ inline void shutdown_socket(socket_t s) noexcept {
 #endif
 }
 
-// Nagle's algorithm exists to coalesce small writes into fewer packets — the
+// Nagle's algorithm exists to coalesce small writes into fewer packets, the
 // exact opposite of what an order-entry link wants. Every latency number this
 // project reports would be a lie about the network stack without this.
 inline void set_no_delay(socket_t s) noexcept {
@@ -309,7 +309,7 @@ class TcpListener {
 // --- UDP -------------------------------------------------------------------
 
 // Sends datagrams to one destination. Point it at a multicast group address
-// for real fan-out, or at 127.0.0.1 for tests — the code is identical; only
+// for real fan-out, or at 127.0.0.1 for tests. The code is identical; only
 // the address class differs.
 class UdpSender {
  public:

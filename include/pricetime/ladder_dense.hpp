@@ -16,7 +16,7 @@ namespace pricetime {
 // cached index. The costs of the layout are explicit: memory scales with the
 // configured price range, prices outside [min, max] are rejected (the book
 // checks valid_price() before matching), and when the best level empties we
-// scan toward worse prices for the next active one — rare, and short in
+// scan toward worse prices for the next active one; rare and short in
 // practice because activity clusters near the touch, but worst-case O(range).
 // Level addresses are stable: the vectors are sized once and never resized.
 class DenseLadder {

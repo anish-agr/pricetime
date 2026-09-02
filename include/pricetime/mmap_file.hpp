@@ -138,7 +138,7 @@ class MmapFile {
   // This matters enormously on Windows, where a mapped view has no readahead
   // by default: a sequential parse faults one 4 KB page at a time, each fault
   // a synchronous disk read. The first full-day replay of a real 8.25 GB
-  // NASDAQ file ran at 2 MB/s for exactly this reason — thirty-two times
+  // NASDAQ file ran at 2 MB/s for exactly this reason, thirty-two times
   // slower than the parser itself. A reader that walks the file should call
   // this a window ahead of its cursor; POSIX gets the same via
   // madvise(WILLNEED), on top of the MADV_SEQUENTIAL readahead already set.

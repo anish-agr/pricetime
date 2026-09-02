@@ -12,8 +12,8 @@ namespace pricetime::itch {
 
 // Builds well-formed ITCH 5.0 BinaryFILE bytes in memory.
 //
-// Written as an encoder independent of the decoder — big-endian assembled by
-// hand, from the spec rather than from itch.hpp — so agreement between the
+// Written as an encoder independent of the decoder: big-endian assembled by
+// hand, from the spec rather than from itch.hpp, so agreement between the
 // two is evidence about the specification rather than two copies of one
 // misunderstanding.
 //

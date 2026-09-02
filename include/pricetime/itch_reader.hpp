@@ -35,7 +35,7 @@ struct ReadResult {
 // the spec after this code was written still parses cleanly instead of
 // desynchronizing. The type table is used as a cross-check on known types,
 // where a disagreement is a genuine signal that the stream is misaligned or
-// that the file is a different ITCH version — far better caught loudly here
+// that the file is a different ITCH version, far better caught loudly here
 // than as nonsense prices a million messages later.
 //
 // The handler is called as h(const std::uint8_t* msg, std::size_t len).

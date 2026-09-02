@@ -49,17 +49,17 @@ TEST_CASE("pooled ladder: hashes identically to the plain map ladder") {
   CHECK(pooled.open_orders() == plain.open_orders());
 }
 
-// The reason it exists: after warmup, creating and destroying levels — at
-// prices never used before — costs zero allocations. The plain map ladder
-// has a test asserting it DOES allocate here; this is its counterpart.
+// The reason it exists: after warmup, creating and destroying levels at
+// prices never used before costs zero allocations. The plain map ladder has
+// a test asserting that it does allocate here; this is its counterpart.
 TEST_CASE("pooled ladder: level churn is allocation-free after warmup") {
   OrderBook<PooledMapLadder, OpenAddressIdMap> book;
   book.reserve_orders(1u << 16);
 
   // Warmup: create then drain a batch of levels so the pool holds nodes and
-  // the order arena reaches its high-water mark. BOTH sides: the bid and ask
-  // trees have different comparator types, so their node caches are separate
-  // — the first version of this test warmed only bids, churned asks, and the
+  // the order arena reaches its high-water mark. Both sides: the bid and ask
+  // trees have different comparator types, so their node caches are separate.
+  // The first version of this test warmed only bids, churned asks, and the
   // 200 "impossible" allocations it counted were exactly the ask nodes.
   OrderId id = 1;
   for (Price p = 1000; p < 1200; ++p) {
@@ -94,7 +94,7 @@ TEST_CASE("pooled ladder: cache is bounded, extras are released") {
   for (int i = 0; i < kLevels; ++i) {
     Level* lvl = ladder.get_or_create(Side::Bid, 1000 + i);
     REQUIRE(lvl != nullptr);
-    // Make the level non-empty so on_level_empty semantics are honest.
+    // Make the level non-empty so on_level_empty gets a realistic call.
     static Order o;  // links unused; only order_count matters to the ladder
     lvl->push_back(&o);
     levels.push_back(lvl);

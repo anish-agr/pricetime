@@ -15,9 +15,9 @@ namespace pricetime {
 // A set of per-symbol books sharing one global order-id space.
 //
 // The id space is global on purpose: NASDAQ ITCH order reference numbers are
-// unique across the whole feed, not per instrument, and — more importantly —
-// the messages that matter most (execute, cancel, delete) carry ONLY the
-// order reference. They do not repeat the symbol. So a replay engine must be
+// unique across the whole feed, not per instrument, and the messages that
+// matter most (execute, cancel, delete) carry only the order reference. They
+// do not repeat the symbol. So a replay engine must be
 // able to go from a bare id to the right book, which means one shared index
 // from id to its owning book.
 //
@@ -58,8 +58,8 @@ class MultiBook {
   }
 
   // Routes an id-only operation (execute / cancel / delete / replace) to
-  // whichever book owns that order. Returns nullptr when the id is unknown —
-  // which on a real feed is normal, not an error: a full-day file references
+  // whichever book owns that order. Returns nullptr when the id is unknown,
+  // which on a real feed is normal rather than an error: a full-day file
   // orders for symbols the replay may have filtered out.
   BookType* book_for_order(OrderId id) { return owner_.find(id); }
 

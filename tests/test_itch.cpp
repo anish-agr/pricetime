@@ -177,7 +177,7 @@ TEST_CASE("reader catches a framing length that contradicts the spec") {
 }
 
 // Forward compatibility: a type this build does not know about still parses,
-// because the framing length — not the table — advances the cursor.
+// because the framing length, not the table, advances the cursor.
 TEST_CASE("framed reader skips unknown message types without desynchronizing") {
   Writer w;
   w.add_order(1, 1, Side::Bid, 100, Symbol("AAPL"), 1000);

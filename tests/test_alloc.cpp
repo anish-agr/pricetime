@@ -2,7 +2,7 @@
 //
 // Timing numbers from a shared CI runner are worthless, so these assert on
 // allocation behaviour instead: machine-independent, reproducible, and
-// directly tied to the property that matters — an exchange's matching loop
+// directly tied to the property that matters: an exchange's matching loop
 // must not call into the allocator, because that is where unbounded tail
 // latency comes from.
 #include <doctest/doctest.h>
@@ -47,10 +47,10 @@ bool escape(void* p) {
 }  // namespace
 
 TEST_CASE("the allocation counter itself works") {
-  // A new-expression is NOT a reliable way to provoke an allocation: C++14
+  // A new-expression is not a reliable way to provoke an allocation: C++14
   // ([expr.new]/10, N3664) lets an implementation omit calls to a replaceable
   // allocation function, and GCC at -O2 duly deletes a local new/delete pair
-  // outright — this test failed on GCC while passing on MSVC for exactly that
+  // outright; this test failed on GCC while passing on MSVC for exactly that
   // reason. Calling the allocation function directly and letting the pointer
   // escape leaves nothing to elide.
   std::size_t counted = 0;
@@ -162,9 +162,9 @@ TEST_CASE("matching is allocation-free (dense + open addressing)") {
   }
 }
 
-// The honest counterpart: the tree-backed ladder allocates a node every time a
-// price level comes into existence. That is not a bug — it is the cost of the
-// data structure, and pinning it in a test keeps the comparison truthful.
+// The counterpart: the tree-backed ladder allocates a node every time a
+// price level comes into existence. That is not a bug; it is the cost of the
+// data structure, and pinning it in a test keeps the comparison accurate.
 TEST_CASE("map ladder allocates per new price level, by design") {
   OrderBook<MapLadder, OpenAddressIdMap> book{};
   book.reserve_orders(10000);
@@ -179,7 +179,7 @@ TEST_CASE("map ladder allocates per new price level, by design") {
   CHECK(guard.allocations() >= 100);
 }
 
-// The order pool is what makes the zero-allocation claim possible: it must
+// The order pool is what the zero-allocation claim rests on: it must
 // hand back recycled nodes rather than growing, once the high-water mark is
 // reached.
 TEST_CASE("order pool recycles instead of growing") {

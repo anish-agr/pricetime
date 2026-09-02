@@ -38,21 +38,21 @@ struct Depth {
 // Price-time-priority limit order book. Single-threaded by design.
 //
 // Two compile-time policies, both benchmarked head-to-head:
-//   Ladder — price -> Level lookup and best-price tracking:
+//   Ladder: price -> Level lookup and best-price tracking.
 //     bool   valid_price(Price) [may be static]
 //     Level* get_or_create(Side, Price)
-//     void   on_level_empty(Side, Level*)  — the level is dead after this call
-//     Level* best(Side) (+ const overload) — nullptr when that side is empty
-//     template <class F> void for_each_level(Side, F) const — best -> worst,
-//         stopping early if F returns false
-//   IdMap  — order id -> Order* (see id_map.hpp)
+//     void   on_level_empty(Side, Level*)  (the level is dead after this call)
+//     Level* best(Side) (+ const overload) returns nullptr if the side is empty
+//     template <class F> void for_each_level(Side, F) const walks best to
+//         worst, stopping early if F returns false
+//   IdMap: order id -> Order* (see id_map.hpp)
 //
 // Validation order is fixed and identical for every entry point, so rejection
 // codes are reproducible: bad id, bad quantity, bad price, duplicate id.
 //
 // Matching: an aggressive order consumes the opposite side while its limit
-// crosses, filling resting orders in FIFO order at THEIR price — price
-// improvement accrues to the aggressor, as on a real exchange.
+// crosses, filling resting orders in FIFO order at the resting price, so
+// price improvement accrues to the aggressor as on a real exchange.
 //
 // replace() is ITCH-style: the new order is validated completely, then the old
 // one is canceled and the remainder entered as a brand-new order (new id, new
@@ -71,7 +71,7 @@ class OrderBook {
     std::uint64_t traded_qty = 0;
     std::uint64_t canceled_qty = 0;
     // Quantity removed by a feed-driven execution (see execute_resting).
-    // Counted separately from traded_qty because it consumes only ONE side:
+    // Counted separately from traded_qty because it consumes only one side:
     // when replaying a market-data feed the aggressor never entered this
     // book, so it contributes nothing to added_qty.
     std::uint64_t executed_qty = 0;
@@ -119,8 +119,8 @@ class OrderBook {
   }
 
   // Fill-or-kill: all of it, right now, or nothing at all. The pre-scan walks
-  // the crossing levels before touching the book, so a kill leaves no trace —
-  // that walk is the honest cost of the guarantee.
+  // the crossing levels before touching the book, so a kill leaves no trace.
+  // The extra walk is the cost of that guarantee.
   template <class OnExec>
   Result add_fok(OrderId id, Side side, Price price, Qty qty, OnExec&& on_exec) {
     if (const Result r = validate(id, price, qty); r != Result::Ok) return r;
@@ -137,8 +137,8 @@ class OrderBook {
   }
 
   // Market order: no limit, sweeps until filled or the book runs dry; never
-  // rests. An empty opposite side is not an error — the order is simply
-  // killed in full, which is what an exchange does with it.
+  // rests. An empty opposite side is not an error; the order is killed in
+  // full, which is what an exchange does with it.
   template <class OnExec>
   Result add_market(OrderId id, Side side, Qty qty, OnExec&& on_exec) {
     if (id == 0) return Result::RejectedBadId;
@@ -223,8 +223,8 @@ class OrderBook {
     ladder_.for_each_level(s, std::forward<F>(f));
   }
 
-  // Aggregated L2 snapshot, best levels first. Allocates — this is a
-  // reporting call for strategy code and tooling, not a hot-path operation.
+  // Aggregated L2 snapshot, best levels first. Allocates; this is a reporting
+  // call for strategy code and tooling, not a hot-path operation.
   [[nodiscard]] Depth depth(std::size_t max_levels) const {
     Depth d;
     d.bids.reserve(max_levels);
@@ -236,8 +236,8 @@ class OrderBook {
 
   // Deterministic fingerprint of the full book: every level best -> worst,
   // every resting order in FIFO order, hashed platform-independently. Books
-  // that processed equivalent histories hash identically — regardless of
-  // which ladder or id-map policy they run on.
+  // that processed equivalent histories hash identically, regardless of which
+  // ladder or id-map policy they run on.
   [[nodiscard]] std::uint64_t state_hash() const {
     Fnv1a64 h;
     for (const Side s : {Side::Bid, Side::Ask}) {

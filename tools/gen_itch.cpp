@@ -4,10 +4,10 @@
 //
 // The real thing is a multi-gigabyte download from NASDAQ's public FTP. This
 // produces a structurally identical file so the parser, the replay driver,
-// and the throughput measurement can be exercised end to end — in CI, on a
+// and the throughput measurement can be exercised end to end: in CI, on a
 // laptop, and before the download finishes.
 //
-// What it does NOT reproduce is the statistical character of real order flow:
+// What it does not reproduce is the statistical character of real order flow:
 // arrival clustering, price distributions around the touch, the cancel/trade
 // ratio, or the intraday volume profile. Numbers taken against this file
 // measure the parser and the book, not the market.
@@ -104,7 +104,7 @@ int main(int argc, char** argv) {
   std::uint64_t match_number = 1;
 
   // Message mix roughly in the spirit of a real session: far more adds and
-  // cancels than trades. Not calibrated to a real day — see the header note.
+  // cancels than trades. Not calibrated to a real day; see the header note.
   while (w.message_count() < target_messages) {
     ts += 1000 + next_random(seed) % 50000;  // microsecond-ish spacing
     const std::uint64_t roll = next_random(seed) % 100;
@@ -164,7 +164,7 @@ int main(int argc, char** argv) {
       const OrderId fresh = next_ref++;
       // A replace message carries no side, so the new price must be chosen
       // for the side the original order was on. Pricing every replace on the
-      // bid side produced files with crossed books — which the replay tool's
+      // bid side produced files with crossed books, which the replay tool's
       // sanity check caught, since a real exchange never crosses its own
       // book and a reconstruction that does is either bad input or a bug.
       const Price price = o.side == Side::Bid ? mids[si] - offset : mids[si] + offset;

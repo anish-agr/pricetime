@@ -15,9 +15,9 @@ namespace pricetime {
 //
 // Both implementations expose the same minimal interface, which is smaller
 // than std::unordered_map's on purpose: the book only ever needs
-//   Order* find(OrderId) const   — nullptr when absent
-//   bool   insert(OrderId, Order*) — false when the id is already present
-//   bool   erase(OrderId)          — false when absent
+//   Order* find(OrderId) const     returns nullptr when absent
+//   bool   insert(OrderId, Order*) returns false if the id is already present
+//   bool   erase(OrderId)          returns false when absent
 //   size_t size() const
 //   void   reserve(size_t)
 //
@@ -26,7 +26,7 @@ namespace pricetime {
 // identical. (ITCH order reference numbers start at 1.)
 
 // Baseline: the obvious std::unordered_map. Kept as a policy so the
-// open-addressing version has something honest to be measured against.
+// open-addressing version has something to be measured against.
 class StdIdMap {
  public:
   [[nodiscard]] Order* find(OrderId id) const noexcept {
@@ -51,7 +51,7 @@ class StdIdMap {
 // MultiBook maps id -> OrderBook* for feed routing. The second use exists
 // because profiling the real full-day replay showed the std::unordered_map
 // order->book index costing ~64 bytes per live order in node and bucket
-// overhead — the same lesson as the id map itself, one layer up. Here a live
+// overhead, the same problem as the id map itself one layer up. Here a live
 // order costs 16 bytes at 70% load.
 //
 // Why this beats the node-based map on this workload:
@@ -63,7 +63,7 @@ class StdIdMap {
 // Deletion uses Knuth's backward-shift (Algorithm R) rather than tombstones:
 // on erase, later elements in the probe chain are pulled back into the hole
 // when doing so keeps them reachable from their ideal slot. Tombstones would
-// be simpler but degrade a long-running book — an exchange session cancels
+// be simpler but degrade a long-running book: an exchange session cancels
 // millions of orders, and every tombstone permanently lengthens some probe
 // chain until a full rehash.
 template <class V>

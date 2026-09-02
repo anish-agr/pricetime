@@ -29,7 +29,7 @@ namespace pricetime::bench {
 // out-of-order core is free to execute it before the work that precedes it
 // has retired, and to hoist work from after it. Without fences, timing a
 // sub-100ns operation measures the scheduler's imagination rather than the
-// code — an unfenced build of this benchmark reported ~12ns cancels, which is
+// code: an unfenced build of this benchmark reported ~12ns cancels, which is
 // fewer cycles than the cache misses that operation provably incurs.
 //
 // LFENCE before and after brackets the sample: the first waits for prior

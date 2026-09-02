@@ -206,7 +206,7 @@ TEST_CASE("multi-symbol: books stay independent and ids route correctly") {
   w.add_order(1, 1, Side::Bid, 100, kAapl, 1000000);
   w.add_order(2, 2, Side::Bid, 200, kMsft, 4000000);
   w.add_order(3, 3, Side::Ask, 300, kAapl, 1000100);
-  // Delete by reference only — no symbol on the wire.
+  // Delete by reference only; no symbol on the wire.
   w.order_delete(4, 2);
   REQUIRE(drive(rep, w).ok());
 

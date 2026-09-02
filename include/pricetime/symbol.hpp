@@ -11,7 +11,7 @@ namespace pricetime {
 // A NASDAQ stock symbol: exactly 8 bytes on the wire, space-padded on the
 // right (e.g. "AAPL    "). Kept as a fixed 8-byte value rather than a string
 // so it fits in a register, compares in one 64-bit operation, and never
-// allocates — symbol comparison happens once per message on a feed that
+// allocates: symbol comparison happens once per message on a feed that
 // carries tens of millions of them per day.
 struct Symbol {
   std::array<char, 8> data{};

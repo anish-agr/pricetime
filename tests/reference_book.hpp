@@ -15,12 +15,12 @@ namespace pricetime::test {
 
 // An obviously-correct order book. Every operation is a linear scan over a
 // flat vector of live orders; there is no ladder, no id map, no pool, no
-// intrusive linkage — nothing shared with the real implementation.
+// intrusive linkage, and nothing shared with the real implementation.
 //
 // This exists because the dense-vs-map differential test has a blind spot:
 // both fast books run the SAME matching loop, so they can only disagree about
-// ladder behaviour. A semantic bug in the matching itself — filling in the
-// wrong order, mispricing a fill, mishandling an IOC remainder — would appear
+// ladder behaviour. A semantic bug in matching itself (filling in the wrong
+// order, mispricing a fill, mishandling an IOC remainder) would appear
 // identically in both and pass. Checking against an independent model written
 // straight from the definition of price-time priority is what closes that gap.
 //
