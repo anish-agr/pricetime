@@ -44,6 +44,7 @@ jobs:
           ./build/tools/replay_itch /tmp/ci.itch --depth 3
           ./build/tools/mm_sandbox /tmp/ci.itch --symbol AAPL --half-spread 1
           ./build/tools/mm_sandbox /tmp/ci.itch --symbol AAPL --half-spread 1 --fill-model optimistic
+          ./build/tools/book_stats /tmp/ci.itch --sample-every 20000 --out /tmp/ci-stats
 
       # Engine smoke: server + client over real loopback sockets on the
       # runner. Latency numbers from CI are meaningless and not recorded;
@@ -101,3 +102,28 @@ jobs:
         run: ctest --test-dir build --output-on-failure
         env:
           TSAN_OPTIONS: halt_on_error=1
+
+  fuzz:
+    name: ubuntu / fuzz
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      # The ITCH decoders read fixed byte offsets out of a length-prefixed
+      # buffer, which is the one place in the repo where malformed input could
+      # reach past the end of an allocation. libFuzzer generates the inputs;
+      # ASan and UBSan are what turn a bad read into a failure rather than a
+      # wrong number. The committed corpus seeds it, and every input it finds
+      # is replayed by the normal test binary on every other platform.
+      - name: Configure
+        run: >
+          cmake -B build-fuzz -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          -DPRICETIME_FUZZ=ON -DPRICETIME_BUILD_TESTS=OFF
+          -DPRICETIME_BUILD_BENCH=OFF -DPRICETIME_BUILD_TOOLS=OFF
+          -DCMAKE_CXX_COMPILER=clang++
+
+      - name: Build
+        run: cmake --build build-fuzz --parallel
+
+      - name: Fuzz
+        run: ./build-fuzz/fuzz/fuzz_itch fuzz/corpus -max_total_time=90 -print_final_stats=1
