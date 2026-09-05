@@ -10,17 +10,21 @@ A limit order book maintains resting buy and sell orders and matches incoming
 orders against them under **price-time priority**: the best price trades first,
 and among orders at the same price, the one that arrived first trades first.
 
-Three operations dominate real traffic:
+Three operations dominate real traffic. These shares are measured over
+NASDAQ's 2019-12-30 session rather than assumed; an earlier version of this
+document guessed, and guessed the third row wrong by a factor of four:
 
-| operation | frequency on a real feed | what it needs |
-|---|---|---|
-| add | ~40% | find/create a price level, append to its queue |
-| cancel | ~50% | find an order **by id**, unlink it |
-| execute | ~10% | find the best price level, fill from the queue head |
+| operation | messages that day | share | what it needs |
+|---|---:|---:|---|
+| add | 118,631,456 | 45.1% | find/create a price level, append to its queue |
+| delete | 114,360,997 | 43.4% | find an order **by id**, unlink it |
+| replace | 21,639,067 | 8.2% | delete by id, then add |
+| execute | 5,822,741 | 2.2% | find the best price level, fill from the queue head |
+| partial cancel | 2,787,676 | 1.1% | find an order by id, reduce it |
 
-Cancels outnumber trades by roughly an order of magnitude on modern equity
-markets, since most posted liquidity is never hit. That shapes the whole
-design: **cancel-by-id is the hot path**, not matching.
+Removals outnumber executions **20 to 1**, and only 1.49% of all posted shares
+ever traded. Every row except `execute` starts by finding an order by its id.
+That shapes the whole design: **cancel-by-id is the hot path**, not matching.
 
 ## 2. Data structures
 
@@ -156,9 +160,30 @@ footprint and unbounded price range are kept, level churn allocates nothing
 after warmup, and a test with a replaced `operator new` enforces the zero. On
 the real full day it is the fastest of the three: 0.45 against 0.40 M msg/s.
 
-Taken together: the array ladder buys nothing measurable here and carries a
-1400x worst case. The configuration to ship is the pooled tree ladder with the
-open-addressing id map, which is not what I assumed when I started.
+### Price span, not level count, is what kills the array
+
+The obvious rescue for the dense ladder is to size it to the day instead of to
+the whole feed. Measuring the day says no, for a reason I did not expect.
+
+Books are narrow by level count and enormous by price span. The median book
+holds 53 active price levels, spread across 255,800 ticks. The p90 book side
+spans 2.0 billion ticks, because far-out resting quotes reach nearly the whole
+representable price range: the widest, `SHIPW`, spans 1,999,999,856 ticks,
+about $200,000. At 40 bytes per slot that is 10 MB per side at the median and
+80 GB at p90.
+
+This is the sharpest statement of the whole ladder comparison. **A tree pays
+for the levels that exist; an array pays for the distance between the furthest
+apart of them.** On real data those two numbers differ by four orders of
+magnitude, and no sizing policy closes that gap, because the outliers are real
+orders that a correct book has to hold. A windowed dense ladder is not a tuning
+change to the array; it is a different data structure with its own eviction
+problem.
+
+Taken together: the array ladder buys nothing measurable, carries a 1400x
+worst case, and cannot be sized for real data. The configuration to ship is the
+pooled tree ladder with the open-addressing id map, which is not what I assumed
+when I started.
 
 ## 5. Correctness strategy
 
@@ -195,6 +220,17 @@ every platform, compiler, and policy. The id-map refactor replaced the id map,
 rewrote the order pool, and added four order types, and the constant never
 moved.
 
+**Fuzzing the parser.** Everything above tests the book. The decoders are a
+different kind of risk: they read fixed byte offsets out of a length-prefixed
+buffer, so a malformed file is the one way this code could reach past an
+allocation. A libFuzzer target runs under ASan and UBSan in CI, and its corpus
+is committed so that inputs it has found are replayed by the ordinary test
+binary on compilers where libFuzzer does not exist. The same test also
+generates 5,000 fresh mutated and random inputs per run. What it asserts is
+narrow on purpose: a book rebuilt from garbage may be crossed or absurd, since
+feed reconstruction rests orders passively at whatever price arrives, but it
+may never be internally inconsistent.
+
 **Deterministic performance tests.** Timing on a shared CI runner is noise, so
 CI asserts on allocation behaviour instead: the test binary replaces global
 `operator new`/`delete` and counts. A warmed book must run 200k add/cancel
@@ -214,8 +250,12 @@ enforces it.
 - **Order id 0 is reserved** as the open-addressing empty sentinel, and is
   rejected by the book regardless of which id-map policy is compiled in, so the
   policies stay observationally identical.
-- **No self-trade prevention, no auctions, no halts, no odd-lot rules.** Real
-  exchanges have all of these.
+- **No auctions, halts, or odd-lot rules.** Real exchanges have all of these.
+  The closing cross is the single busiest minute in the data and is replayed
+  as ordinary messages rather than modelled as an auction.
+- **Self-trade prevention is not reachable from the replay path**, because the
+  public feed does not identify participants. It applies to orders entered
+  through the participant-aware entry points.
 
 ## 7. Feed reconstruction
 
@@ -403,14 +443,20 @@ diverge from history the moment we participate, which changes the question from
 
 ## 10. Open questions
 
-- The dense ladder's range bound is affordable per symbol only if the active
-  level count stays small. The full-day data can answer what that count
-  actually is per symbol, which would say whether a windowed dense ladder is
-  worth building.
+Two of the questions this section used to hold have been answered by measuring
+the day, and are written up in section 4 rather than left here.
+
 - How much of the ~175 ns per operation is cache miss versus work? The next
   measurement should be a cache-miss count, not another latency histogram.
-- The full-day replay is working-set-bound. Whether a compact per-symbol book
-  representation moves that number is untested.
+  `perf` is unavailable in the development environment, so this needs a Linux
+  box with the counters enabled.
+- The full-day replay is working-set-bound at roughly 8 GB of live books.
+  Whether a more compact per-symbol representation moves that number is
+  untested, and findings 7 and 9 suggest where to look: books are shallow
+  (median 53 levels, median best level holding one order) but numerous.
+- Self-trade prevention has no equivalent in the ITCH feed, so its cost is
+  measured only in the synthetic benchmark. What it does to a real matching
+  workload is unknown.
 - Validation covers one venue and one day. A second day, or a second venue with
   a different protocol, would test whether anything here is overfit to
   2019-12-30.

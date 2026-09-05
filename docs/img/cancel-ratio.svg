@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="478" viewBox="0 0 760 478" role="img">
+  <style>
+    .t { font: 13px -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; fill: #5B6772; }
+    .lbl { font: 12px 'SF Mono', Consolas, monospace; fill: #5B6772; }
+    .num { font: 12px 'SF Mono', Consolas, monospace; fill: #5B6772; }
+    .hd { font: 600 15px -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; fill: #2B3540; }
+    .sub { font: 12px -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; fill: #5B6772; }
+    @media (prefers-color-scheme: dark) {
+      .t, .lbl, .num, .sub { fill: #98A6B2; }
+      .hd { fill: #D6DEE6; }
+    }
+  </style>
+  <text x="0" y="20" class="hd">Cancels per trade, by symbol</text>
+  <text x="0" y="40" class="sub">Order removals per execution across the day. Log scale; the feed-wide average is 20.4.</text>
+  <text x="64" y="75" class="lbl" text-anchor="end">URTY</text>
+  <rect x="74" y="62" width="594.0" height="18" fill="#C2703D" opacity="0.85" rx="1"/>
+  <text x="676.0" y="75" class="num">3800 : 1</text>
+  <text x="64" y="99" class="lbl" text-anchor="end">TNA</text>
+  <rect x="74" y="86" width="371.1" height="18" fill="#C2703D" opacity="0.85" rx="1"/>
+  <text x="453.1" y="99" class="num">172 : 1</text>
+  <text x="64" y="123" class="lbl" text-anchor="end">DIA</text>
+  <rect x="74" y="110" width="320.1" height="18" fill="#2E8B7A" opacity="0.85" rx="1"/>
+  <text x="402.1" y="123" class="num">85 : 1</text>
+  <text x="64" y="147" class="lbl" text-anchor="end">XLY</text>
+  <rect x="74" y="134" width="315.3" height="18" fill="#2E8B7A" opacity="0.85" rx="1"/>
+  <text x="397.3" y="147" class="num">79 : 1</text>
+  <text x="64" y="171" class="lbl" text-anchor="end">XLK</text>
+  <rect x="74" y="158" width="293.9" height="18" fill="#2E8B7A" opacity="0.85" rx="1"/>
+  <text x="375.9" y="171" class="num">59 : 1</text>
+  <text x="64" y="195" class="lbl" text-anchor="end">QQQ</text>
+  <rect x="74" y="182" width="282.4" height="18" fill="#2E8B7A" opacity="0.85" rx="1"/>
+  <text x="364.4" y="195" class="num">50 : 1</text>
+  <text x="64" y="219" class="lbl" text-anchor="end">TQQQ</text>
+  <rect x="74" y="206" width="279.5" height="18" fill="#2E8B7A" opacity="0.85" rx="1"/>
+  <text x="361.5" y="219" class="num">48 : 1</text>
+  <text x="64" y="243" class="lbl" text-anchor="end">IWM</text>
+  <rect x="74" y="230" width="274.1" height="18" fill="#2E8B7A" opacity="0.85" rx="1"/>
+  <text x="356.1" y="243" class="num">45 : 1</text>
+  <text x="64" y="267" class="lbl" text-anchor="end">GOOGL</text>
+  <rect x="74" y="254" width="269.4" height="18" fill="#2E8B7A" opacity="0.85" rx="1"/>
+  <text x="351.4" y="267" class="num">42 : 1</text>
+  <text x="64" y="291" class="lbl" text-anchor="end">NUGT</text>
+  <rect x="74" y="278" width="228.4" height="18" fill="#2E8B7A" opacity="0.85" rx="1"/>
+  <text x="310.4" y="291" class="num">24 : 1</text>
+  <text x="64" y="315" class="lbl" text-anchor="end">SPY</text>
+  <rect x="74" y="302" width="226.8" height="18" fill="#2E8B7A" opacity="0.85" rx="1"/>
+  <text x="308.8" y="315" class="num">23 : 1</text>
+  <text x="64" y="339" class="lbl" text-anchor="end">TVIX</text>
+  <rect x="74" y="326" width="219.7" height="18" fill="#2E8B7A" opacity="0.85" rx="1"/>
+  <text x="301.7" y="339" class="num">21 : 1</text>
+  <text x="64" y="363" class="lbl" text-anchor="end">AMD</text>
+  <rect x="74" y="350" width="209.0" height="18" fill="#2E8B7A" opacity="0.85" rx="1"/>
+  <text x="291.0" y="363" class="num">18 : 1</text>
+  <text x="64" y="387" class="lbl" text-anchor="end">MU</text>
+  <rect x="74" y="374" width="202.9" height="18" fill="#2E8B7A" opacity="0.85" rx="1"/>
+  <text x="284.9" y="387" class="num">17 : 1</text>
+  <text x="64" y="411" class="lbl" text-anchor="end">MSFT</text>
+  <rect x="74" y="398" width="201.2" height="18" fill="#2E8B7A" opacity="0.85" rx="1"/>
+  <text x="283.2" y="411" class="num">16 : 1</text>
+  <text x="64" y="435" class="lbl" text-anchor="end">AAPL</text>
+  <rect x="74" y="422" width="176.3" height="18" fill="#2E8B7A" opacity="0.85" rx="1"/>
+  <text x="258.3" y="435" class="num">12 : 1</text>
+</svg>

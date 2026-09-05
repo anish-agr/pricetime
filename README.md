@@ -70,17 +70,21 @@ The pipeline replays NASDAQ's published TotalView-ITCH file for December 30,
 The unedited output of these runs is in [docs/runs/](docs/runs/), with the
 command that produced each one.
 
+![Message rate across the trading day](docs/img/intraday-rate.svg)
+
 ## Findings
 
-Six results from measuring design choices instead of assuming them.
+Nine results from measuring design choices instead of assuming them. Three of
+them contradicted what this repo believed before the measurement, including one
+of its own published claims.
 
 **1. The id map matters more than the price ladder.** With everything else
 held constant, swapping the ladder moves medians by a few percent. Swapping
 `std::unordered_map` for an open-addressing id map (linear probing,
 backward-shift deletion, no tombstones) moves cancel p50 by 2.1×, execute by
 2.8×, and the p99.9 add tail by 21×, because rehash pauses land on individual
-operations. Cancels outnumber trades roughly 10:1 on real feeds, so the id map
-is the hot path.
+operations. Cancels outnumber trades 20:1 on the measured day (finding 8), so
+the id map is the hot path.
 
 **2. The dense ladder's worst case is 1400×.** Empty the best level while the
 next active level is far away and the array rescans the gap: 81 µs against the
@@ -120,12 +124,56 @@ mid moves 136 ticks against each fill within 1 ms and 182 ticks by 1 s. That
 markout curve is what adverse selection looks like in the accounting, and it
 is the number a market-making backtest exists to produce.
 
+**7. Level count and price span differ by four orders of magnitude, and the
+array ladder loses on the second one.** The median book holds just 53 active
+price levels, which sounds like an array would be cheap. Those levels are
+spread across 255,800 ticks. A tree pays for the levels that exist; an array
+indexed by price offset pays for the distance between the furthest apart of
+them. At 40 bytes per slot the median book needs 10 MB per side and the p90
+book needs 80 GB, because far-out resting quotes stretch the span to nearly
+the whole representable price range (the widest, `SHIPW`, spans 2.0 billion
+ticks, about $200,000). This closes the open question the profiling raised: a
+windowed dense ladder is not a small fix to the array, it is a different data
+structure.
+
+![Slots a dense ladder would need](docs/img/ladder-slots.svg)
+
+**8. Cancels beat trades 20:1, and 98.5% of posted shares never trade.** This
+one corrected the repo's own README, which had claimed 10:1 from folklore.
+Measured over the day: 118.6 M adds, 114.4 M deletes, 21.6 M replaces, and only
+5.8 M executions. Executions are **2.2%** of all book events, not the ~10% the
+design notes assumed. Only **1.49%** of all posted shares ever traded. The
+dispersion between symbols is larger than the average: `NIO` removes 4.8 orders
+per execution, `QQQ` 50, and `URTY` 3,800.
+
+![Cancels per trade by symbol](docs/img/cancel-ratio.svg)
+
+**9. Most orders die in milliseconds; the median lives a second.** 19% of orders
+are removed within 10 ms and 6.7% within 100 µs, while the median lifetime is
+1.2 s and the mean is dragged to minutes by resting interest that never moves.
+The queue you join is also shorter than intuition suggests: the median best
+level holds a single order, and the p99 holds 16.
+
+![Order lifetime distribution](docs/img/order-lifetime.svg)
+
+These three come from `book_stats`, which walks the day and reports the
+distributions rather than the totals. Its full output is in
+[docs/runs/real-day-statistics.txt](docs/runs/real-day-statistics.txt), and the
+charts above regenerate from it with `python tools/plot_stats.py`.
+
 ## Components
 
 - **The book.** Price-time priority matching (limit, IOC, FOK, market), O(1)
   cancel by id, intrusive per-level FIFO queues, a chunked arena with an
   intrusive free list, and two structural policies (`Ladder`, `IdMap`)
   swappable at compile time so they can be raced against each other.
+- **Self-trade prevention.** Cancel-resting, cancel-aggressor, or cancel-both,
+  applied when an order would match another from the same participant. The
+  participant id sits in padding the `Order` struct already had, so the feature
+  costs zero bytes per order and a static assertion keeps it that way.
+  Fill-or-kill takes it into account: its pre-scan walks orders rather than
+  levels when prevention is active, because promising all-or-nothing and then
+  stopping halfway is the one outcome that order type forbids.
 - **ITCH 5.0.** Big-endian decoders, a framed BinaryFILE reader, a separately
   written encoder so round-trip agreement is evidence about the spec rather
   than two copies of one misreading, and multi-symbol reconstruction through a
@@ -143,11 +191,17 @@ is the number a market-making backtest exists to produce.
 - **The sandbox.** An inventory-skewed quoter, integer tick accounting
   (doubles lose cents across 100 k fills), mid-based marking, markout curves at
   1 ms to 1 s horizons, and the queue-position fill model above.
+- **Microstructure statistics.** `book_stats` reports the distributions behind
+  findings 7 to 9: active levels and price span per book, order lifetime,
+  order size, and cancel-to-trade by symbol. Level counts are sampled and
+  lifetimes follow one order in 64, both stated in the output, because holding
+  a timestamp for every live order would add gigabytes to a run that is already
+  working-set-bound.
 
 ## Testing
 
-169 test cases / 7.36 M assertions, run on GCC 15 and MSVC with warnings as
-errors, plus ASan/UBSan and TSan jobs in CI.
+183 test cases / 7.36 M assertions, run on GCC 15 and MSVC with warnings as
+errors, plus ASan/UBSan, TSan, and libFuzzer jobs in CI.
 
 - **Differential testing against an independent model.** A naive O(n)
   reference book (flat vector, linear scans, no shared code with the real
@@ -167,6 +221,13 @@ errors, plus ASan/UBSan and TSan jobs in CI.
 - **Feed integrity.** Engine loopback tests unwrap the MoldUDP64 stream,
   assert zero sequence gaps, and require the stream-rebuilt book to hash
   identically to the engine's.
+- **Fuzzing, with the corpus committed.** The decoders read fixed byte offsets
+  out of a length-prefixed buffer, which is the one place malformed input could
+  reach past an allocation. A libFuzzer target runs under ASan and UBSan in CI;
+  its corpus lives in the repo and is replayed by the normal test binary on
+  every platform, so inputs the fuzzer found stay regression tests where
+  libFuzzer cannot run. The same test also throws 5,000 fresh mutated and
+  random inputs at the parser on every run, everywhere.
 - Structural invariants are also walked mid-stream (never crossed, sorted
   levels, FIFO link consistency, share conservation), and CI runs the pipeline
   end to end: generate, replay, strategy, then a live engine session over real
@@ -188,6 +249,7 @@ ctest --test-dir build -C Release --output-on-failure
 ./build/tools/gen_itch day.itch --messages 3000000 # synthetic ITCH day
 ./build/tools/replay_itch day.itch                 # rebuild books + sanity checks
 ./build/tools/mm_sandbox day.itch --symbol AAPL    # strategy over the replay
+./build/tools/book_stats day.itch                  # microstructure distributions
 ./build/tools/engine_server --spin &               # the matching engine
 ./build/tools/engine_client --spin                 # wire-to-wire latency
 ```
@@ -198,6 +260,16 @@ NASDAQ publishes full-day ITCH 5.0 files at `emi.nasdaq.com/ITCH/Nasdaq ITCH/`
 ```bash
 ./build/tools/replay_itch 12302019.NASDAQ_ITCH50 --minute-profile
 ./build/tools/mm_sandbox 12302019.NASDAQ_ITCH50 --symbol AAPL --half-spread 100
+./build/tools/book_stats 12302019.NASDAQ_ITCH50 --out stats
+python tools/plot_stats.py --stats stats          # regenerate the charts
+```
+
+The fuzzer needs clang, and is the one target not built by default:
+
+```bash
+cmake -B build-fuzz -DPRICETIME_FUZZ=ON -DCMAKE_CXX_COMPILER=clang++
+cmake --build build-fuzz --parallel
+./build-fuzz/fuzz/fuzz_itch fuzz/corpus -max_total_time=60
 ```
 
 ## Limitations
@@ -211,7 +283,11 @@ NASDAQ publishes full-day ITCH 5.0 files at `emi.nasdaq.com/ITCH/Nasdaq ITCH/`
 - The queue model still double-counts liquidity at the simulated order's own
   price, because the historical aggressor also consumes the order it really
   hit. Fixing that requires counterfactual replay.
-- No self-trade prevention, auctions, halts, or odd lots.
+- No auctions, halts, or odd-lot rules. The closing cross is the busiest
+  minute in the data and is reconstructed like any other message, not modelled
+  as an auction.
+- Self-trade prevention exists but is not wired through the ITCH replay path,
+  because the public feed does not identify participants.
 
 Design rationale and the full measurement write-ups:
 [ARCHITECTURE.md](ARCHITECTURE.md) · [docs/PROFILE.md](docs/PROFILE.md)

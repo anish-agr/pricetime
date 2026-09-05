@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="300" viewBox="0 0 760 300" role="img">
+  <style>
+    .t { font: 13px -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; fill: #5B6772; }
+    .lbl { font: 12px 'SF Mono', Consolas, monospace; fill: #5B6772; }
+    .num { font: 12px 'SF Mono', Consolas, monospace; fill: #5B6772; }
+    .hd { font: 600 15px -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; fill: #2B3540; }
+    .sub { font: 12px -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; fill: #5B6772; }
+    @media (prefers-color-scheme: dark) {
+      .t, .lbl, .num, .sub { fill: #98A6B2; }
+      .hd { fill: #D6DEE6; }
+    }
+  </style>
+  <text x="0" y="20" class="hd">Why an array-indexed price ladder cannot work on real data</text>
+  <text x="0" y="40" class="sub">Slots between the best and worst active price, per book side, log scale. A tree pays for levels; an array pays for this.</text>
+  <line x1="58.0" y1="74" x2="58.0" y2="246" stroke="#B9C2CB" stroke-width="1" opacity="0.35"/>
+  <text x="58.0" y="264" class="num" text-anchor="middle">10^0</text>
+  <line x1="132.4" y1="74" x2="132.4" y2="246" stroke="#B9C2CB" stroke-width="1" opacity="0.35"/>
+  <text x="132.4" y="264" class="num" text-anchor="middle">10^1</text>
+  <line x1="206.8" y1="74" x2="206.8" y2="246" stroke="#B9C2CB" stroke-width="1" opacity="0.35"/>
+  <text x="206.8" y="264" class="num" text-anchor="middle">10^2</text>
+  <line x1="281.2" y1="74" x2="281.2" y2="246" stroke="#B9C2CB" stroke-width="1" opacity="0.35"/>
+  <text x="281.2" y="264" class="num" text-anchor="middle">10^3</text>
+  <line x1="355.6" y1="74" x2="355.6" y2="246" stroke="#B9C2CB" stroke-width="1" opacity="0.35"/>
+  <text x="355.6" y="264" class="num" text-anchor="middle">10^4</text>
+  <line x1="430.1" y1="74" x2="430.1" y2="246" stroke="#B9C2CB" stroke-width="1" opacity="0.35"/>
+  <text x="430.1" y="264" class="num" text-anchor="middle">10^5</text>
+  <line x1="504.5" y1="74" x2="504.5" y2="246" stroke="#B9C2CB" stroke-width="1" opacity="0.35"/>
+  <text x="504.5" y="264" class="num" text-anchor="middle">10^6</text>
+  <line x1="578.9" y1="74" x2="578.9" y2="246" stroke="#B9C2CB" stroke-width="1" opacity="0.35"/>
+  <text x="578.9" y="264" class="num" text-anchor="middle">10^7</text>
+  <line x1="653.3" y1="74" x2="653.3" y2="246" stroke="#B9C2CB" stroke-width="1" opacity="0.35"/>
+  <text x="653.3" y="264" class="num" text-anchor="middle">10^8</text>
+  <line x1="727.7" y1="74" x2="727.7" y2="246" stroke="#B9C2CB" stroke-width="1" opacity="0.35"/>
+  <text x="727.7" y="264" class="num" text-anchor="middle">10^9</text>
+  <rect x="47.8" y="244.9" width="20.4" height="1.1" fill="#2E8B7A" opacity="0.8" rx="1"/>
+  <rect x="70.2" y="246.0" width="20.4" height="0.0" fill="#2E8B7A" opacity="0.8" rx="1"/>
+  <rect x="92.6" y="246.0" width="20.4" height="0.0" fill="#2E8B7A" opacity="0.8" rx="1"/>
+  <rect x="115.0" y="246.0" width="20.4" height="0.0" fill="#2E8B7A" opacity="0.8" rx="1"/>
+  <rect x="137.4" y="245.7" width="20.4" height="0.3" fill="#2E8B7A" opacity="0.8" rx="1"/>
+  <rect x="159.8" y="245.8" width="20.4" height="0.2" fill="#2E8B7A" opacity="0.8" rx="1"/>
+  <rect x="182.2" y="245.9" width="20.4" height="0.1" fill="#2E8B7A" opacity="0.8" rx="1"/>
+  <rect x="204.6" y="245.9" width="20.4" height="0.1" fill="#2E8B7A" opacity="0.8" rx="1"/>
+  <rect x="227.0" y="245.4" width="20.4" height="0.6" fill="#2E8B7A" opacity="0.8" rx="1"/>
+  <rect x="249.4" y="245.1" width="20.4" height="0.9" fill="#2E8B7A" opacity="0.8" rx="1"/>
+  <rect x="271.8" y="244.2" width="20.4" height="1.8" fill="#2E8B7A" opacity="0.8" rx="1"/>
+  <rect x="294.2" y="241.9" width="20.4" height="4.1" fill="#2E8B7A" opacity="0.8" rx="1"/>
+  <rect x="316.6" y="239.1" width="20.4" height="6.9" fill="#2E8B7A" opacity="0.8" rx="1"/>
+  <rect x="339.0" y="232.5" width="20.4" height="13.5" fill="#2E8B7A" opacity="0.8" rx="1"/>
+  <rect x="361.4" y="214.5" width="20.4" height="31.5" fill="#2E8B7A" opacity="0.8" rx="1"/>
+  <rect x="383.8" y="183.7" width="20.4" height="62.3" fill="#2E8B7A" opacity="0.8" rx="1"/>
+  <rect x="406.2" y="163.8" width="20.4" height="82.2" fill="#2E8B7A" opacity="0.8" rx="1"/>
+  <rect x="428.6" y="170.4" width="20.4" height="75.6" fill="#2E8B7A" opacity="0.8" rx="1"/>
+  <rect x="451.0" y="193.7" width="20.4" height="52.3" fill="#2E8B7A" opacity="0.8" rx="1"/>
+  <rect x="473.4" y="218.3" width="20.4" height="27.7" fill="#2E8B7A" opacity="0.8" rx="1"/>
+  <rect x="495.8" y="234.0" width="20.4" height="12.0" fill="#2E8B7A" opacity="0.8" rx="1"/>
+  <rect x="518.2" y="242.2" width="20.4" height="3.8" fill="#2E8B7A" opacity="0.8" rx="1"/>
+  <rect x="540.6" y="245.1" width="20.4" height="0.9" fill="#2E8B7A" opacity="0.8" rx="1"/>
+  <rect x="563.0" y="245.5" width="20.4" height="0.5" fill="#2E8B7A" opacity="0.8" rx="1"/>
+  <rect x="585.4" y="245.7" width="20.4" height="0.3" fill="#2E8B7A" opacity="0.8" rx="1"/>
+  <rect x="607.8" y="245.9" width="20.4" height="0.1" fill="#2E8B7A" opacity="0.8" rx="1"/>
+  <rect x="630.2" y="245.9" width="20.4" height="0.1" fill="#2E8B7A" opacity="0.8" rx="1"/>
+  <rect x="652.6" y="246.0" width="20.4" height="0.0" fill="#2E8B7A" opacity="0.8" rx="1"/>
+  <rect x="675.0" y="246.0" width="20.4" height="0.0" fill="#2E8B7A" opacity="0.8" rx="1"/>
+  <rect x="697.4" y="245.4" width="20.4" height="0.6" fill="#2E8B7A" opacity="0.8" rx="1"/>
+  <rect x="719.8" y="74.0" width="20.4" height="172.0" fill="#2E8B7A" opacity="0.8" rx="1"/>
+  <line x1="526.9" y1="66" x2="526.9" y2="246" stroke="#C2703D" stroke-width="2" stroke-dasharray="5 4"/>
+  <text x="526.9" y="62" class="num" text-anchor="middle">this repo's dense ladder: 2,000,000 slots</text>
+  <text x="0" y="286" class="sub">Half of all book sides already need more than 255,800 slots, and a tenth need billions.</text>
+</svg>

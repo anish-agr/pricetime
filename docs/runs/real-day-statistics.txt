@@ -1,0 +1,77 @@
+file            ./12302019.NASDAQ_ITCH50
+messages        268,744,780 in 720.0 s
+symbols         8,892
+level samples   471,199 books sampled across 54 ticks (every 5,000,000 messages)
+
+active price levels per book (both sides, sampled)
+  mean 82.8   p50 53   p90 155   p99 545   p99.9 1903   max 5562
+  widest book observed: AMZN with 5,562 levels
+
+dense-ladder slots needed per side (best to worst active price)
+  p50 255,800   p90 1,999,871,801   p99 1,999,992,064   p99.9 1,999,999,001   max 1,999,999,856
+  widest span observed: SHIPW at 1,999,999,856 slots
+  the feed-safe [0, $200] range needs 2,000,000: 0x the p99.9 book
+
+orders resting at the best level (queue you join behind)
+  p50 1   p90 4   p99 16   max 213
+
+order lifetime, add to removal (1 in 64 sampled, 1,999,716 observations)
+  < 1 us                    0    0.0%  
+  1-10 us                 112    0.0%  
+  10-100 us           134,222    6.7%  ####
+  100 us - 1 ms       100,568   11.7%  ###
+  1-10 ms             146,756   19.1%  ####
+  10-100 ms           198,212   29.0%  #####
+  100 ms - 1 s        363,929   47.2%  ##########
+  1-10 s              614,906   77.9%  ##################
+  10-60 s             281,296   92.0%  ########
+  1-10 min            114,907   97.8%  ###
+  > 10 min             44,808  100.0%  #
+  median 1,211,387 us   mean 264,427,097 us
+
+most common order sizes
+       100 shares    88,502,248   63.1%
+       200 shares    10,464,088    7.5%
+       300 shares     4,767,488    3.4%
+       500 shares     3,834,654    2.7%
+       400 shares     3,567,392    2.5%
+         1 shares     2,176,670    1.6%
+      1000 shares     1,902,513    1.4%
+        10 shares     1,753,289    1.2%
+       600 shares     1,540,822    1.1%
+       800 shares     1,266,446    0.9%
+  round lots (multiple of 100): 88.3% of all orders
+
+cancel-to-trade
+  adds 140,270,523   removals 118,631,456   executions 5,822,741
+  ratio 20.4 removals per execution (feed-wide)
+  1.49% of posted shares ever traded
+
+top 20 symbols by order count
+  symbol             adds       removals   executions cancel/trade
+  QQQ           1,221,096      1,111,822       22,095       50.3
+  SPY           1,109,146        991,829       42,635       23.3
+  IWM           1,004,648        926,749       20,657       44.9
+  TQQQ            874,084        746,238       15,425       48.4
+  AAPL            795,712        698,744       60,543       11.5
+  URTY            790,501        334,364           88     3799.6
+  AMD             733,505        686,997       37,789       18.2
+  MSFT            630,899        576,026       35,315       16.3
+  TNA             512,422        426,892        2,476      172.4
+  DIA             503,663        421,118        4,956       85.0
+  XLK             487,448        447,239        7,573       59.1
+  XLY             465,902        434,113        5,462       79.5
+  TVIX            456,078        362,623       17,201       21.1
+  NUGT            443,406        386,802       16,258       23.8
+  GOOGL           439,123        334,819        7,967       42.0
+  MU              421,981        371,315       22,243       16.7
+  SLB             405,976        379,991        7,790       48.8
+  GDXJ            405,273        362,434        9,793       37.0
+  EWZ             400,536        357,692       10,348       34.6
+  NIO             394,236        327,911       68,555        4.8
+
+wrote ./stats-levels.csv (399 rows)
+wrote ./stats-spans.csv (31 rows)
+wrote ./stats-lifetimes.csv (11 rows)
+wrote ./stats-sizes.csv (40 rows)
+wrote ./stats-symbols.csv (200 rows)

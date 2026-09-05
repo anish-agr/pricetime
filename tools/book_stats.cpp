@@ -8,9 +8,11 @@
 // design notes kept deferring to. Three of the measurements exist to settle
 // open questions the profiling raised:
 //
-//  - Active price levels per book. The dense ladder's range bound is only
-//    affordable if real books stay narrow. Nothing in the repo knew the real
-//    number until this tool measured it.
+//  - Active price levels per book, and separately the price span between the
+//    best and worst of them. A tree ladder pays for the count; an array
+//    indexed by price offset pays for the span. Whether the array is viable
+//    on real data turns entirely on how far apart those two numbers are, and
+//    nothing in the repo knew that until this measured it.
 //  - Order lifetime, add to removal. Decides whether an arena that never
 //    returns memory is acceptable, and it is the clearest single picture of
 //    how transient real quoting is.
@@ -371,14 +373,22 @@ int main(int argc, char** argv) {
                 commas(span_samples.back()).c_str());
     std::printf("  widest span observed: %s at %s slots\n", widest_span_symbol.c_str(),
                 commas(widest_span).c_str());
-    // A ladder sized for anything the feed might carry has to span [0, $200]
-    // in 1/100-cent ticks. Sizing it to the day instead is the whole question.
-    const std::uint64_t naive = 2000000;
-    const std::uint64_t p999 = pct(span_samples, 0.999);
-    if (p999 > 0) {
-      std::printf("  the feed-safe [0, $200] range needs %s: %.0fx the p99.9 book\n",
-                  commas(naive).c_str(),
-                  static_cast<double>(naive) / static_cast<double>(p999));
+    // 40 bytes per Level is what the array costs per slot, occupied or not.
+    const double bytes_per_slot = 40.0;
+    std::printf("  at %g bytes per slot that is %.1f MB per side at p50, %.1f GB at p90\n",
+                bytes_per_slot,
+                static_cast<double>(pct(span_samples, 0.50)) * bytes_per_slot / 1e6,
+                static_cast<double>(pct(span_samples, 0.90)) * bytes_per_slot / 1e9);
+    // The comparison that matters is span against level count. A tree pays
+    // for the levels that exist; an array pays for the distance between the
+    // furthest apart of them, and on real data those differ enormously.
+    const std::uint64_t median_levels = pct(level_samples, 0.50);
+    if (median_levels > 0) {
+      std::printf("  the median book holds %s levels inside a span of %s slots: %.0fx\n",
+                  commas(median_levels).c_str(),
+                  commas(pct(span_samples, 0.50)).c_str(),
+                  static_cast<double>(pct(span_samples, 0.50)) /
+                      static_cast<double>(median_levels));
     }
   }
 
