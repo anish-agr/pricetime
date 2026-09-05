@@ -91,8 +91,8 @@ class ReferenceBook {
     return add_fok(id, side, price, qty, [](const Execution&) {});
   }
 
-  // The pre-scan walks the same order the matcher would, which is what makes
-  // the self-trade cases fall out: an own order either gets skipped or ends
+  // The pre-scan walks orders in the same order the matcher will reach them,
+  // so the self-trade cases fall out: an own order is either skipped or ends
   // the walk, exactly as it will during matching.
   template <class OnExec>
   Result add_fok_as(ParticipantId actor, OrderId id, Side side, Price price, Qty qty,

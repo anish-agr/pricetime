@@ -25,7 +25,7 @@
 //     runs out of memory, which is a finding about the harness rather than
 //     about the code.
 //
-// Note what stage 3 does NOT assert. Feed reconstruction rests orders
+// Note what stage 3 does not assert. Feed reconstruction rests orders
 // passively at whatever price the message carries, so arbitrary bytes can
 // absolutely produce a crossed book, and that is correct behaviour rather
 // than a bug. Only the structural properties below hold for every possible
@@ -46,8 +46,8 @@ namespace pricetime::fuzz {
 inline constexpr std::size_t kReplayByteLimit = 1024;
 
 // Decodes one already-framed, already-length-checked message every way its
-// type allows. Touching every decoded field is what makes a bad offset show
-// up as a sanitizer report rather than as a value nobody reads.
+// type allows. Every decoded field is touched so that a bad offset surfaces
+// as a sanitizer report rather than as a value nobody reads.
 inline std::uint64_t decode_message(const std::uint8_t* msg, std::size_t len) {
   using namespace pricetime::itch;
   std::uint64_t sink = 0;
