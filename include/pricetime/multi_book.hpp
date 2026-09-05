@@ -60,7 +60,7 @@ class MultiBook {
   // Routes an id-only operation (execute / cancel / delete / replace) to
   // whichever book owns that order. Returns nullptr when the id is unknown,
   // which on a real feed is normal rather than an error: a full-day file
-  // orders for symbols the replay may have filtered out.
+  // references orders for symbols the replay may have filtered out.
   BookType* book_for_order(OrderId id) { return owner_.find(id); }
 
   // Records that `id` now lives in `symbol`'s book. Called by the replay

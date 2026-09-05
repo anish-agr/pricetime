@@ -59,6 +59,25 @@ struct Depth {
 // time priority). A replace priced through the book executes like any
 // aggressive add. There is no in-place "reduce keeps priority" modify here;
 // that is an OUCH-style extension.
+// What to do when an incoming order would trade against a resting order from
+// the same participant. Exchanges prevent this because a wash trade is a
+// reportable event, not because it is hard to execute.
+//
+// The names describe what is removed, which is the only part that differs:
+//  - None:            no prevention. The default, so existing behaviour and
+//                     the pinned golden hash are untouched.
+//  - CancelResting:   drop the resting order and carry on matching. The
+//                     aggressor keeps its remaining quantity.
+//  - CancelAggressor: leave the resting order and kill the aggressor's
+//                     remainder.
+//  - CancelBoth:      remove both.
+enum class SelfTradePolicy : std::uint8_t {
+  None = 0,
+  CancelResting,
+  CancelAggressor,
+  CancelBoth,
+};
+
 template <class Ladder, class IdMap = OpenAddressIdMap>
 class OrderBook {
  public:
@@ -75,6 +94,10 @@ class OrderBook {
     // when replaying a market-data feed the aggressor never entered this
     // book, so it contributes nothing to added_qty.
     std::uint64_t executed_qty = 0;
+    // Number of times the self-trade policy fired. An event count, not a
+    // quantity: the shares it removes are counted in canceled_qty so that
+    // conservation still holds.
+    std::uint64_t self_trades_prevented = 0;
   };
 
   template <class... LadderArgs>
@@ -89,33 +112,59 @@ class OrderBook {
   // rehashes never land on the hot path.
   void reserve_orders(std::size_t expected) { orders_.reserve(expected); }
 
+  // Self-trade prevention applies only to orders entered through the
+  // participant-aware entry points below, and only when both sides carry the
+  // same non-zero participant.
+  void set_self_trade_policy(SelfTradePolicy p) noexcept { stp_ = p; }
+  [[nodiscard]] SelfTradePolicy self_trade_policy() const noexcept { return stp_; }
+
   // --- order entry ------------------------------------------------------
 
   // Good-till-cancel limit order: match while crossing, rest any remainder.
   template <class OnExec>
   Result add_limit(OrderId id, Side side, Price price, Qty qty, OnExec&& on_exec) {
-    if (const Result r = validate(id, price, qty); r != Result::Ok) return r;
-    counters_.added_qty += qty;
-    const Qty left = match<true>(id, side, price, qty, on_exec);
-    if (left > 0) rest(id, side, price, left);
-    return Result::Ok;
+    return add_limit_as(0, id, side, price, qty, std::forward<OnExec>(on_exec));
   }
 
   Result add_limit(OrderId id, Side side, Price price, Qty qty) {
     return add_limit(id, side, price, qty, [](const Execution&) {});
   }
 
+  template <class OnExec>
+  Result add_limit_as(ParticipantId actor, OrderId id, Side side, Price price, Qty qty,
+                      OnExec&& on_exec) {
+    if (const Result r = validate(id, price, qty); r != Result::Ok) return r;
+    counters_.added_qty += qty;
+    const Qty left = match<true>(id, actor, side, price, qty, on_exec);
+    if (left > 0) rest(id, side, price, left, actor);
+    return Result::Ok;
+  }
+
+  Result add_limit_as(ParticipantId actor, OrderId id, Side side, Price price, Qty qty) {
+    return add_limit_as(actor, id, side, price, qty, [](const Execution&) {});
+  }
+
   // Immediate-or-cancel: match while crossing, kill the remainder.
   template <class OnExec>
   Result add_ioc(OrderId id, Side side, Price price, Qty qty, OnExec&& on_exec) {
-    if (const Result r = validate(id, price, qty); r != Result::Ok) return r;
-    counters_.added_qty += qty;
-    counters_.canceled_qty += match<true>(id, side, price, qty, on_exec);
-    return Result::Ok;
+    return add_ioc_as(0, id, side, price, qty, std::forward<OnExec>(on_exec));
   }
 
   Result add_ioc(OrderId id, Side side, Price price, Qty qty) {
     return add_ioc(id, side, price, qty, [](const Execution&) {});
+  }
+
+  template <class OnExec>
+  Result add_ioc_as(ParticipantId actor, OrderId id, Side side, Price price, Qty qty,
+                    OnExec&& on_exec) {
+    if (const Result r = validate(id, price, qty); r != Result::Ok) return r;
+    counters_.added_qty += qty;
+    counters_.canceled_qty += match<true>(id, actor, side, price, qty, on_exec);
+    return Result::Ok;
+  }
+
+  Result add_ioc_as(ParticipantId actor, OrderId id, Side side, Price price, Qty qty) {
+    return add_ioc_as(actor, id, side, price, qty, [](const Execution&) {});
   }
 
   // Fill-or-kill: all of it, right now, or nothing at all. The pre-scan walks
@@ -123,17 +172,27 @@ class OrderBook {
   // The extra walk is the cost of that guarantee.
   template <class OnExec>
   Result add_fok(OrderId id, Side side, Price price, Qty qty, OnExec&& on_exec) {
-    if (const Result r = validate(id, price, qty); r != Result::Ok) return r;
-    if (available<true>(side, price, qty) < qty) return Result::RejectedNoLiquidity;
-    counters_.added_qty += qty;
-    const Qty left = match<true>(id, side, price, qty, on_exec);
-    // The pre-scan guaranteed full liquidity, so nothing can be left over.
-    counters_.canceled_qty += left;
-    return Result::Ok;
+    return add_fok_as(0, id, side, price, qty, std::forward<OnExec>(on_exec));
   }
 
   Result add_fok(OrderId id, Side side, Price price, Qty qty) {
     return add_fok(id, side, price, qty, [](const Execution&) {});
+  }
+
+  template <class OnExec>
+  Result add_fok_as(ParticipantId actor, OrderId id, Side side, Price price, Qty qty,
+                    OnExec&& on_exec) {
+    if (const Result r = validate(id, price, qty); r != Result::Ok) return r;
+    if (available<true>(side, price, qty, actor) < qty) return Result::RejectedNoLiquidity;
+    counters_.added_qty += qty;
+    const Qty left = match<true>(id, actor, side, price, qty, on_exec);
+    // The pre-scan guaranteed full reachable liquidity, so nothing is left.
+    counters_.canceled_qty += left;
+    return Result::Ok;
+  }
+
+  Result add_fok_as(ParticipantId actor, OrderId id, Side side, Price price, Qty qty) {
+    return add_fok_as(actor, id, side, price, qty, [](const Execution&) {});
   }
 
   // Market order: no limit, sweeps until filled or the book runs dry; never
@@ -141,16 +200,25 @@ class OrderBook {
   // full, which is what an exchange does with it.
   template <class OnExec>
   Result add_market(OrderId id, Side side, Qty qty, OnExec&& on_exec) {
-    if (id == 0) return Result::RejectedBadId;
-    if (qty == 0) return Result::RejectedBadQty;
-    if (orders_.find(id) != nullptr) return Result::RejectedDuplicateId;
-    counters_.added_qty += qty;
-    counters_.canceled_qty += match<false>(id, side, 0, qty, on_exec);
-    return Result::Ok;
+    return add_market_as(0, id, side, qty, std::forward<OnExec>(on_exec));
   }
 
   Result add_market(OrderId id, Side side, Qty qty) {
     return add_market(id, side, qty, [](const Execution&) {});
+  }
+
+  template <class OnExec>
+  Result add_market_as(ParticipantId actor, OrderId id, Side side, Qty qty, OnExec&& on_exec) {
+    if (id == 0) return Result::RejectedBadId;
+    if (qty == 0) return Result::RejectedBadQty;
+    if (orders_.find(id) != nullptr) return Result::RejectedDuplicateId;
+    counters_.added_qty += qty;
+    counters_.canceled_qty += match<false>(id, actor, side, 0, qty, on_exec);
+    return Result::Ok;
+  }
+
+  Result add_market_as(ParticipantId actor, OrderId id, Side side, Qty qty) {
+    return add_market_as(actor, id, side, qty, [](const Execution&) {});
   }
 
   Result cancel(OrderId id) {
@@ -204,8 +272,12 @@ class OrderBook {
     if (!ladder_.valid_price(new_price)) return Result::RejectedBadPrice;
     if (new_id != old_id && orders_.find(new_id) != nullptr) return Result::RejectedDuplicateId;
     const Side side = old->side;
+    // The replacement is a new order in every other respect, but it belongs
+    // to the same participant, so read that off before the original dies.
+    const ParticipantId actor = old->participant;
     cancel_open(old);
-    return add_limit(new_id, side, new_price, new_qty, std::forward<OnExec>(on_exec));
+    return add_limit_as(actor, new_id, side, new_price, new_qty,
+                        std::forward<OnExec>(on_exec));
   }
 
   Result replace(OrderId old_id, OrderId new_id, Price new_price, Qty new_qty) {
@@ -267,9 +339,15 @@ class OrderBook {
   // Consume the opposite side while the aggressor's limit crosses; returns
   // the quantity left unfilled. HasLimit is a compile-time switch so market
   // orders share this code without putting a branch on the limit-order path.
+  //
+  // When the aggressor's remainder is killed by self-trade prevention this
+  // counts the kill as canceled quantity itself and returns 0, so every
+  // caller's accounting stays correct without knowing STP happened.
   template <bool HasLimit, class OnExec>
-  Qty match(OrderId aggressor, Side side, Price price, Qty qty, OnExec& on_exec) {
+  Qty match(OrderId aggressor, ParticipantId actor, Side side, Price price, Qty qty,
+            OnExec& on_exec) {
     const Side opp = opposite(side);
+    const bool stp_on = actor != 0 && stp_ != SelfTradePolicy::None;
     while (qty > 0) {
       Level* lvl = ladder_.best(opp);
       if (lvl == nullptr) break;
@@ -279,6 +357,24 @@ class OrderBook {
       }
       while (qty > 0 && lvl->head != nullptr) {
         Order* resting = lvl->head;
+        if (stp_on && resting->participant == actor) {
+          ++counters_.self_trades_prevented;
+          const bool kill_resting = stp_ != SelfTradePolicy::CancelAggressor;
+          const bool kill_aggressor = stp_ != SelfTradePolicy::CancelResting;
+          if (kill_resting) {
+            const OrderId rid = resting->id;
+            counters_.canceled_qty += resting->qty;
+            lvl->remove(resting);
+            orders_.erase(rid);
+            pool_.release(resting);
+          }
+          if (kill_aggressor) {
+            counters_.canceled_qty += qty;
+            if (lvl->order_count == 0) ladder_.on_level_empty(opp, lvl);
+            return 0;
+          }
+          continue;  // CancelResting: the next resting order may still fill us
+        }
         const Qty fill = qty < resting->qty ? qty : resting->qty;
         lvl->reduce(resting, fill);
         qty -= fill;
@@ -297,27 +393,53 @@ class OrderBook {
 
   // Quantity resting on the opposite side that this order could reach, capped
   // at `need` so a deep book is not walked further than necessary.
+  //
+  // With self-trade prevention active the answer depends on who owns each
+  // resting order, so the walk drops to per-order granularity. Which orders
+  // are reachable also depends on the policy: CancelResting skips the
+  // aggressor's own orders and keeps going, while the two policies that kill
+  // the aggressor make everything behind its first own order unreachable.
+  // Fill-or-kill needs this exactly right, because promising all-or-nothing
+  // and then stopping halfway is the one outcome the order type forbids.
   template <bool HasLimit>
-  [[nodiscard]] std::uint64_t available(Side side, Price price, Qty need) const {
+  [[nodiscard]] std::uint64_t available(Side side, Price price, Qty need,
+                                        ParticipantId actor = 0) const {
     std::uint64_t total = 0;
+    const bool stp_on = actor != 0 && stp_ != SelfTradePolicy::None;
+    const bool stops_at_own = stp_ == SelfTradePolicy::CancelAggressor ||
+                              stp_ == SelfTradePolicy::CancelBoth;
     ladder_.for_each_level(opposite(side), [&](const Level& lvl) -> bool {
       if constexpr (HasLimit) {
         const bool crosses = side == Side::Bid ? price >= lvl.price : price <= lvl.price;
         if (!crosses) return false;
       }
-      total += lvl.total_qty;
-      return total < need;
+      if (!stp_on) {
+        total += lvl.total_qty;
+        return total < need;
+      }
+      for (const Order* o = lvl.head; o != nullptr; o = o->next) {
+        if (o->participant == actor) {
+          // Stopping the walk is the whole effect: with a policy that kills
+          // the aggressor, nothing behind this order is reachable.
+          if (stops_at_own) return false;
+          continue;  // CancelResting: this one is removed, the rest remain
+        }
+        total += o->qty;
+        if (total >= need) return false;
+      }
+      return true;
     });
     return total;
   }
 
-  void rest(OrderId id, Side side, Price price, Qty qty) {
+  void rest(OrderId id, Side side, Price price, Qty qty, ParticipantId actor = 0) {
     Level* lvl = ladder_.get_or_create(side, price);
     Order* o = pool_.alloc();
     o->id = id;
     o->price = price;
     o->qty = qty;
     o->side = side;
+    o->participant = actor;
     lvl->push_back(o);
     orders_.insert(id, o);
   }
@@ -368,6 +490,7 @@ class OrderBook {
     });
   }
 
+  SelfTradePolicy stp_ = SelfTradePolicy::None;
   Ladder ladder_;
   OrderPool pool_;
   IdMap orders_;

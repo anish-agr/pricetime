@@ -38,6 +38,14 @@ struct Symbol {
     return v;
   }
 
+  // Inverse of bits(). Exact round trip: both directions are a memcpy of the
+  // same eight bytes, so a symbol can be used as a hash-map key and recovered.
+  static Symbol from_bits(std::uint64_t v) noexcept {
+    Symbol s;
+    std::memcpy(s.data.data(), &v, 8);
+    return s;
+  }
+
   // Ticker without the trailing padding.
   [[nodiscard]] std::string str() const {
     std::size_t n = data.size();

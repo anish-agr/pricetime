@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <functional>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 #include "pricetime/itch.hpp"
@@ -30,6 +31,24 @@ struct ReplayStats {
   char session_state = ' ';
 };
 
+// Replay observer hooks.
+//
+// Reconstruction and analysis want the same event stream but different
+// bookkeeping, and duplicating the semantics below in an analysis tool is how
+// the two drift apart. So the Replayer takes an observer instead. The default
+// is this empty struct: every call compiles away, and the reconstruction path
+// pays nothing for the extension point.
+//
+// Timestamps are ITCH nanoseconds since midnight, taken from the message.
+struct NullReplayObserver {
+  void on_added(OrderId, const Symbol&, Side, Price, Qty, std::uint64_t) noexcept {}
+  // A replace carries no symbol, so an observer that needs one must have kept
+  // it from the original add.
+  void on_replaced(OrderId, OrderId, Price, Qty, std::uint64_t) noexcept {}
+  void on_reduced(OrderId, Qty, bool, std::uint64_t) noexcept {}
+  void on_removed(OrderId, std::uint64_t) noexcept {}
+};
+
 // Drives a MultiBook from a decoded ITCH stream.
 //
 // The important semantics, which are easy to get wrong:
@@ -47,12 +66,21 @@ struct ReplayStats {
 //  - 'P' (non-cross trade) messages report trades of orders that were never
 //    displayed, so they must not touch the book at all. Applying them is a
 //    classic double-count bug.
-template <class Ladder, class IdMap = OpenAddressIdMap>
+template <class Ladder, class IdMap = OpenAddressIdMap, class Observer = NullReplayObserver>
 class Replayer {
  public:
   using Books = MultiBook<Ladder, IdMap>;
 
   explicit Replayer(Books& books) : books_(books) {}
+
+  // The observer is owned by value so an empty one costs nothing; analysis
+  // tools read their accumulated state back through observer().
+  template <class... Args>
+  Replayer(Books& books, Args&&... args)
+      : books_(books), obs_(std::forward<Args>(args)...) {}
+
+  [[nodiscard]] Observer& observer() noexcept { return obs_; }
+  [[nodiscard]] const Observer& observer() const noexcept { return obs_; }
 
   // Restricts reconstruction to these symbols. Empty means track everything.
   void track_only(const std::vector<Symbol>& symbols) {
@@ -107,6 +135,7 @@ class Replayer {
       books_.note_order(m.reference, book);
       ++stats_.adds;
       stats_.shares_added += m.shares;
+      obs_.on_added(m.reference, m.symbol, m.side, m.price, m.shares, m.timestamp);
     }
   }
 
@@ -122,7 +151,11 @@ class Replayer {
     if (taken < m.shares) ++stats_.clamped;
     ++stats_.executions;
     stats_.shares_executed += taken;
-    if (book->find_order(m.reference) == nullptr) books_.forget_order(m.reference);
+    obs_.on_reduced(m.reference, taken, true, m.timestamp);
+    if (book->find_order(m.reference) == nullptr) {
+      books_.forget_order(m.reference);
+      obs_.on_removed(m.reference, m.timestamp);
+    }
   }
 
   void on_cancel(const OrderCancel& m) {
@@ -136,7 +169,11 @@ class Replayer {
     book->reduce_resting(m.reference, m.shares, &taken);
     if (taken < m.shares) ++stats_.clamped;
     ++stats_.cancels;
-    if (book->find_order(m.reference) == nullptr) books_.forget_order(m.reference);
+    obs_.on_reduced(m.reference, taken, false, m.timestamp);
+    if (book->find_order(m.reference) == nullptr) {
+      books_.forget_order(m.reference);
+      obs_.on_removed(m.reference, m.timestamp);
+    }
   }
 
   void on_delete(const OrderDelete& m) {
@@ -148,6 +185,7 @@ class Replayer {
     }
     book->cancel(m.reference);
     books_.forget_order(m.reference);
+    obs_.on_removed(m.reference, m.timestamp);
     ++stats_.deletes;
   }
 
@@ -171,6 +209,7 @@ class Replayer {
     if (book->insert_passive(m.new_reference, side, m.price, m.shares) == Result::Ok) {
       books_.note_order(m.new_reference, *book);
       stats_.shares_added += m.shares;
+      obs_.on_replaced(m.original_reference, m.new_reference, m.price, m.shares, m.timestamp);
     }
     ++stats_.replaces;
   }
@@ -178,6 +217,7 @@ class Replayer {
   Books& books_;
   std::unordered_set<std::uint64_t> filter_;
   ReplayStats stats_;
+  [[no_unique_address]] Observer obs_{};
 };
 
 }  // namespace pricetime::itch

@@ -34,13 +34,12 @@ class ReferenceBook {
 
   ReferenceBook() : min_(0), max_(0), bounded_(false) {}
 
+  void set_self_trade_policy(SelfTradePolicy p) noexcept { stp_ = p; }
+  [[nodiscard]] SelfTradePolicy self_trade_policy() const noexcept { return stp_; }
+
   template <class OnExec>
   Result add_limit(OrderId id, Side side, Price price, Qty qty, OnExec&& on_exec) {
-    if (const Result r = validate(id, price, qty); r != Result::Ok) return r;
-    added_qty_ += qty;
-    const Qty left = match(id, side, price, true, qty, on_exec);
-    if (left > 0) rest(id, side, price, left);
-    return Result::Ok;
+    return add_limit_as(0, id, side, price, qty, std::forward<OnExec>(on_exec));
   }
 
   Result add_limit(OrderId id, Side side, Price price, Qty qty) {
@@ -48,11 +47,22 @@ class ReferenceBook {
   }
 
   template <class OnExec>
-  Result add_ioc(OrderId id, Side side, Price price, Qty qty, OnExec&& on_exec) {
+  Result add_limit_as(ParticipantId actor, OrderId id, Side side, Price price, Qty qty,
+                      OnExec&& on_exec) {
     if (const Result r = validate(id, price, qty); r != Result::Ok) return r;
     added_qty_ += qty;
-    canceled_qty_ += match(id, side, price, true, qty, on_exec);
+    const Qty left = match(id, actor, side, price, true, qty, on_exec);
+    if (left > 0) rest(id, side, price, left, actor);
     return Result::Ok;
+  }
+
+  Result add_limit_as(ParticipantId actor, OrderId id, Side side, Price price, Qty qty) {
+    return add_limit_as(actor, id, side, price, qty, [](const Execution&) {});
+  }
+
+  template <class OnExec>
+  Result add_ioc(OrderId id, Side side, Price price, Qty qty, OnExec&& on_exec) {
+    return add_ioc_as(0, id, side, price, qty, std::forward<OnExec>(on_exec));
   }
 
   Result add_ioc(OrderId id, Side side, Price price, Qty qty) {
@@ -60,36 +70,79 @@ class ReferenceBook {
   }
 
   template <class OnExec>
-  Result add_fok(OrderId id, Side side, Price price, Qty qty, OnExec&& on_exec) {
+  Result add_ioc_as(ParticipantId actor, OrderId id, Side side, Price price, Qty qty,
+                    OnExec&& on_exec) {
     if (const Result r = validate(id, price, qty); r != Result::Ok) return r;
-    std::uint64_t reachable = 0;
-    for (const RefOrder& o : live_) {
-      if (o.side == side) continue;
-      const bool crosses = side == Side::Bid ? price >= o.price : price <= o.price;
-      if (crosses) reachable += o.qty;
-    }
-    if (reachable < qty) return Result::RejectedNoLiquidity;
     added_qty_ += qty;
-    canceled_qty_ += match(id, side, price, true, qty, on_exec);
+    canceled_qty_ += match(id, actor, side, price, true, qty, on_exec);
     return Result::Ok;
+  }
+
+  Result add_ioc_as(ParticipantId actor, OrderId id, Side side, Price price, Qty qty) {
+    return add_ioc_as(actor, id, side, price, qty, [](const Execution&) {});
+  }
+
+  template <class OnExec>
+  Result add_fok(OrderId id, Side side, Price price, Qty qty, OnExec&& on_exec) {
+    return add_fok_as(0, id, side, price, qty, std::forward<OnExec>(on_exec));
   }
 
   Result add_fok(OrderId id, Side side, Price price, Qty qty) {
     return add_fok(id, side, price, qty, [](const Execution&) {});
   }
 
+  // The pre-scan walks the same order the matcher would, which is what makes
+  // the self-trade cases fall out: an own order either gets skipped or ends
+  // the walk, exactly as it will during matching.
+  template <class OnExec>
+  Result add_fok_as(ParticipantId actor, OrderId id, Side side, Price price, Qty qty,
+                    OnExec&& on_exec) {
+    if (const Result r = validate(id, price, qty); r != Result::Ok) return r;
+    const bool stp_on = actor != 0 && stp_ != SelfTradePolicy::None;
+    const bool stops_at_own =
+        stp_ == SelfTradePolicy::CancelAggressor || stp_ == SelfTradePolicy::CancelBoth;
+    std::uint64_t reachable = 0;
+    std::vector<std::size_t> order = crossing_in_priority_order(side, price, true);
+    for (const std::size_t i : order) {
+      const RefOrder& o = live_[i];
+      if (stp_on && o.participant == actor) {
+        if (stops_at_own) break;
+        continue;
+      }
+      reachable += o.qty;
+      if (reachable >= qty) break;
+    }
+    if (reachable < qty) return Result::RejectedNoLiquidity;
+    added_qty_ += qty;
+    canceled_qty_ += match(id, actor, side, price, true, qty, on_exec);
+    return Result::Ok;
+  }
+
+  Result add_fok_as(ParticipantId actor, OrderId id, Side side, Price price, Qty qty) {
+    return add_fok_as(actor, id, side, price, qty, [](const Execution&) {});
+  }
+
   template <class OnExec>
   Result add_market(OrderId id, Side side, Qty qty, OnExec&& on_exec) {
-    if (id == 0) return Result::RejectedBadId;
-    if (qty == 0) return Result::RejectedBadQty;
-    if (find(id) != nullptr) return Result::RejectedDuplicateId;
-    added_qty_ += qty;
-    canceled_qty_ += match(id, side, 0, false, qty, on_exec);
-    return Result::Ok;
+    return add_market_as(0, id, side, qty, std::forward<OnExec>(on_exec));
   }
 
   Result add_market(OrderId id, Side side, Qty qty) {
     return add_market(id, side, qty, [](const Execution&) {});
+  }
+
+  template <class OnExec>
+  Result add_market_as(ParticipantId actor, OrderId id, Side side, Qty qty, OnExec&& on_exec) {
+    if (id == 0) return Result::RejectedBadId;
+    if (qty == 0) return Result::RejectedBadQty;
+    if (find(id) != nullptr) return Result::RejectedDuplicateId;
+    added_qty_ += qty;
+    canceled_qty_ += match(id, actor, side, 0, false, qty, on_exec);
+    return Result::Ok;
+  }
+
+  Result add_market_as(ParticipantId actor, OrderId id, Side side, Qty qty) {
+    return add_market_as(actor, id, side, qty, [](const Execution&) {});
   }
 
   Result cancel(OrderId id) {
@@ -110,9 +163,11 @@ class ReferenceBook {
     if (!valid_price(new_price)) return Result::RejectedBadPrice;
     if (new_id != old_id && find(new_id) != nullptr) return Result::RejectedDuplicateId;
     const Side side = old->side;
+    const ParticipantId actor = old->participant;
     canceled_qty_ += old->qty;
     erase(old_id);
-    return add_limit(new_id, side, new_price, new_qty, std::forward<OnExec>(on_exec));
+    return add_limit_as(actor, new_id, side, new_price, new_qty,
+                        std::forward<OnExec>(on_exec));
   }
 
   Result replace(OrderId old_id, OrderId new_id, Price new_price, Qty new_qty) {
@@ -123,6 +178,7 @@ class ReferenceBook {
   [[nodiscard]] std::uint64_t added_qty() const noexcept { return added_qty_; }
   [[nodiscard]] std::uint64_t traded_qty() const noexcept { return traded_qty_; }
   [[nodiscard]] std::uint64_t canceled_qty() const noexcept { return canceled_qty_; }
+  [[nodiscard]] std::uint64_t self_trades_prevented() const noexcept { return stp_fired_; }
 
   // Byte-for-byte the same fingerprint scheme as OrderBook::state_hash():
   // per side, levels best -> worst, orders within a level in arrival order.
@@ -162,6 +218,7 @@ class ReferenceBook {
     Price price = 0;
     Qty qty = 0;
     Side side = Side::Bid;
+    ParticipantId participant = 0;
     std::uint64_t seq = 0;  // arrival order == time priority
   };
 
@@ -223,13 +280,54 @@ class ReferenceBook {
     return best;
   }
 
+  // Indices of every order this one could trade with, in the order the
+  // matcher would reach them. Written as a sort of the whole live set because
+  // being obviously right matters more here than being quick.
+  std::vector<std::size_t> crossing_in_priority_order(Side side, Price price,
+                                                      bool has_limit) const {
+    std::vector<std::size_t> out;
+    for (std::size_t i = 0; i < live_.size(); ++i) {
+      const RefOrder& o = live_[i];
+      if (o.side == side) continue;
+      if (has_limit) {
+        const bool crosses = side == Side::Bid ? price >= o.price : price <= o.price;
+        if (!crosses) continue;
+      }
+      out.push_back(i);
+    }
+    std::sort(out.begin(), out.end(), [&](std::size_t a, std::size_t b) {
+      const RefOrder& x = live_[a];
+      const RefOrder& y = live_[b];
+      if (x.price != y.price) {
+        return side == Side::Bid ? x.price < y.price : x.price > y.price;
+      }
+      return x.seq < y.seq;
+    });
+    return out;
+  }
+
   template <class OnExec>
-  Qty match(OrderId aggressor, Side side, Price price, bool has_limit, Qty qty,
-            OnExec& on_exec) {
+  Qty match(OrderId aggressor, ParticipantId actor, Side side, Price price, bool has_limit,
+            Qty qty, OnExec& on_exec) {
+    const bool stp_on = actor != 0 && stp_ != SelfTradePolicy::None;
     while (qty > 0) {
       const std::size_t i = best_counterparty(side, price, has_limit);
       if (i == live_.size()) break;
       RefOrder& resting = live_[i];
+      if (stp_on && resting.participant == actor) {
+        ++stp_fired_;
+        const bool kill_resting = stp_ != SelfTradePolicy::CancelAggressor;
+        const bool kill_aggressor = stp_ != SelfTradePolicy::CancelResting;
+        if (kill_resting) {
+          canceled_qty_ += resting.qty;
+          live_.erase(live_.begin() + static_cast<std::ptrdiff_t>(i));
+        }
+        if (kill_aggressor) {
+          canceled_qty_ += qty;
+          return 0;
+        }
+        continue;
+      }
       const Qty fill = qty < resting.qty ? qty : resting.qty;
       resting.qty -= fill;
       qty -= fill;
@@ -240,11 +338,13 @@ class ReferenceBook {
     return qty;
   }
 
-  void rest(OrderId id, Side side, Price price, Qty qty) {
-    live_.push_back(RefOrder{id, price, qty, side, next_seq_++});
+  void rest(OrderId id, Side side, Price price, Qty qty, ParticipantId actor = 0) {
+    live_.push_back(RefOrder{id, price, qty, side, actor, next_seq_++});
   }
 
   std::vector<RefOrder> live_;
+  SelfTradePolicy stp_ = SelfTradePolicy::None;
+  std::uint64_t stp_fired_ = 0;
   std::uint64_t next_seq_ = 0;
   std::uint64_t added_qty_ = 0;
   std::uint64_t traded_qty_ = 0;

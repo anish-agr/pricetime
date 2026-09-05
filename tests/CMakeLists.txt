@@ -31,7 +31,8 @@ add_executable(pricetime_tests
   test_queue_position.cpp
   test_moldudp64.cpp
   test_itch_stream.cpp
-  test_ladder_pooled.cpp)
+  test_ladder_pooled.cpp
+  test_self_trade.cpp)
 
 find_package(Threads REQUIRED)
 
