@@ -10,21 +10,24 @@ A limit order book maintains resting buy and sell orders and matches incoming
 orders against them under **price-time priority**: the best price trades first,
 and among orders at the same price, the one that arrived first trades first.
 
-Three operations dominate real traffic. These shares are measured over
-NASDAQ's 2019-12-30 session rather than assumed; an earlier version of this
-document guessed, and guessed the third row wrong by a factor of four:
+Three operations dominate real traffic. These shares are measured rather than
+assumed; an earlier version of this document guessed, and guessed the
+`execute` row wrong by a factor of four:
 
-| operation | messages that day | share | what it needs |
-|---|---:|---:|---|
-| add | 118,631,456 | 45.1% | find/create a price level, append to its queue |
-| delete | 114,360,997 | 43.4% | find an order **by id**, unlink it |
-| replace | 21,639,067 | 8.2% | delete by id, then add |
-| execute | 5,822,741 | 2.2% | find the best price level, fill from the queue head |
-| partial cancel | 2,787,676 | 1.1% | find an order by id, reduce it |
+| operation | messages, 2019-12-30 | share | 2020-01-30 | what it needs |
+|---|---:|---:|---:|---|
+| add | 118,631,456 | 45.1% | 44.7% | find/create a price level, append to its queue |
+| delete | 114,360,997 | 43.4% | 43.2% | find an order **by id**, unlink it |
+| replace | 21,639,067 | 8.2% | 8.8% | delete by id, then add |
+| execute | 5,822,741 | 2.2% | 2.1% | find the best price level, fill from the queue head |
+| partial cancel | 2,787,676 | 1.1% | 1.2% | find an order by id, reduce it |
 
-Removals outnumber executions **20 to 1**, and only 1.49% of all posted shares
-ever traded. Every row except `execute` starts by finding an order by its id.
-That shapes the whole design: **cancel-by-id is the hot path**, not matching.
+Removals outnumber executions **20 to 1** on the first day and 21.7 to 1 on the
+second, and only 1.1% to 1.5% of posted shares ever trade. The two sessions
+differ by 57% in volume and the mix barely moves, which is what makes this a
+property of the market rather than of one file. Every row except `execute`
+starts by finding an order by its id. That shapes the whole design:
+**cancel-by-id is the hot path**, not matching.
 
 ## 2. Data structures
 
@@ -306,13 +309,19 @@ side.
 
 ### Validation against real data
 
-The pipeline has since been run against NASDAQ's published TotalView-ITCH file
-for 2019-12-30: 8.25 GB, 268,744,780 messages, 8,892 symbols. The parse is
-clean end to end with zero unknown order references, meaning every execute,
-cancel, delete, and replace in the day resolved to a live order. That is strong
-evidence the decoder offsets are byte-exact, because one wrong byte produces
-garbage references within seconds. No book crossed, and share conservation
-holds in all 8,892 books.
+The pipeline has since been run against two of NASDAQ's published
+TotalView-ITCH files: 2019-12-30 (8.25 GB, 268,744,780 messages, 8,892 symbols)
+and 2020-01-30 (12.95 GB, 423,285,709 messages, 8,900 symbols). Both parse
+clean end to end with **zero unknown order references** across 692 million
+messages, meaning every execute, cancel, delete, and replace resolved to a live
+order. That is strong evidence the decoder offsets are byte-exact, because one
+wrong byte produces garbage references within seconds. No book crossed on
+either day, and share conservation holds in every book.
+
+The second day was chosen to be structurally different rather than confirmatory:
+a normal-volume session against a thin holiday week, 57% more traffic, eight
+more symbols. It needed no code change, which is the only useful thing a second
+day can tell you.
 
 The encoder and decoder were written independently from the spec, so their
 round-trip agreement was always meaningful evidence, but two independent
@@ -457,6 +466,6 @@ the day, and are written up in section 4 rather than left here.
 - Self-trade prevention has no equivalent in the ITCH feed, so its cost is
   measured only in the synthetic benchmark. What it does to a real matching
   workload is unknown.
-- Validation covers one venue and one day. A second day, or a second venue with
-  a different protocol, would test whether anything here is overfit to
-  2019-12-30.
+- Validation covers one venue on two days. A second venue with a different
+  protocol is the remaining test; ITCH is not the only way an exchange
+  describes its book.

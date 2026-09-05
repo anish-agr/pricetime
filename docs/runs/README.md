@@ -4,9 +4,9 @@ Unedited output from the runs behind the numbers in the main README, kept so
 the claims can be checked against the tools that produced them. Only the
 absolute path of the input file was rewritten to `./`.
 
-The input is NASDAQ's published TotalView-ITCH file for 2019-12-30, 8.25 GB
-unpacked. It is not in this repository; download it from
-`emi.nasdaq.com/ITCH/Nasdaq ITCH/` and `gunzip` it.
+The inputs are NASDAQ's published TotalView-ITCH files for 2019-12-30
+(8.25 GB unpacked) and 2020-01-30 (12.95 GB). They are not in this repository;
+download them from `emi.nasdaq.com/ITCH/Nasdaq ITCH/` and `gunzip` them.
 
 | file | what it shows | command |
 |---|---|---|
@@ -15,6 +15,7 @@ unpacked. It is not in this repository; download it from
 | `real-day-pooled-ladder.txt` | same replay with the pooled ladder as well: 0.45 M msg/s, the published rate | `replay_itch 12302019.NASDAQ_ITCH50 --ladder pooled` |
 | `aapl-queue-model.txt` | market maker on real AAPL flow with exact queue position: 4,391 fills, +130 ticks/share captured, $1,317 net loss, markout curve from -136 at 1 ms to -182 at 1 s | `mm_sandbox 12302019.NASDAQ_ITCH50 --symbol AAPL --half-spread 100` |
 | `aapl-optimistic-model.txt` | the same day under the any-print-fills-us model: 24,145 fills, 5.5x the queue model | `mm_sandbox 12302019.NASDAQ_ITCH50 --symbol AAPL --half-spread 100 --fill-model optimistic` |
+| `second-day-replay.txt` | the same validation on a different session: 423,285,709 messages, 8,900 symbols, zero unknown references, no crossed books, conservation everywhere, with no code change | `replay_itch 01302020.NASDAQ_ITCH50 --minute-profile` |
 | `real-day-statistics.txt` | the distributions behind findings 7 to 9: active levels, price span, order lifetime, order size, and cancel-to-trade by symbol | `book_stats 12302019.NASDAQ_ITCH50 --out stats` |
 | `stats-*.csv` | the same data in machine-readable form; `tools/plot_stats.py` turns these into the README's charts | (written by the command above) |
 | `self-trade-benchmark.txt` | what self-trade prevention costs when enabled but not firing: 181.0 vs 182.3 ns p50 | `pricetime_bench --ops 1000000 --ladder map --no-adversarial --no-idmap-compare` |

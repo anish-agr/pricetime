@@ -2,8 +2,8 @@
 
 A limit order book, matching engine, NASDAQ ITCH 5.0 replay pipeline, and
 market-making sandbox in C++20. The book and the replay path are validated
-against a real full trading day of NASDAQ market data: 268,744,780 messages
-across 8,892 symbols.
+against two real full trading days of NASDAQ market data: **692,030,489
+messages** across 8,900 symbols, with no code changes between them.
 
 [![ci](https://github.com/anish-agr/pricetime/actions/workflows/ci.yml/badge.svg)](https://github.com/anish-agr/pricetime/actions/workflows/ci.yml)
 ![C++20](https://img.shields.io/badge/C%2B%2B-20-blue)
@@ -37,21 +37,36 @@ this chip does not have; blocking sockets trade the median (34 µs p50) for a
 much tighter tail (72 µs p99). Both modes ship.
 ‡ Working-set-bound rather than parse-bound: roughly 8 GB of live books plus
 the 8.25 GB file streaming through 15.5 GB of RAM. The filtered row is the
-same parser with the same code path when memory fits.
+same parser with the same code path when memory fits. The second day
+corroborates the diagnosis rather than the number: 57% more data on the same
+machine ran 2.25× slower, at 0.20 M msg/s.
 
 ## Real NASDAQ data
 
-The pipeline replays NASDAQ's published TotalView-ITCH file for December 30,
-2019: 8.25 GB, 268,744,780 messages, 8,892 symbols.
+The pipeline replays NASDAQ's published TotalView-ITCH files for two sessions
+chosen to differ: December 30, 2019 is a thin holiday-week day, and January 30,
+2020 carries 57% more traffic.
 
-- Clean parse with zero unknown order references. Every execute, cancel,
-  delete, and replace across the day resolved to a live order, which means the
-  decoder offsets are byte-exact; a single wrong byte produces garbage
-  references within seconds.
-- No crossed books, and share conservation
-  (`added = executed + canceled + resting`) holds in all 8,892 books.
-- Busiest minute of the day: 3.7 M messages during the 16:00 closing auction,
-  19.9× the day's mean.
+| | 2019-12-30 | 2020-01-30 |
+|---|---:|---:|
+| file size | 8.25 GB | 12.95 GB |
+| messages | 268,744,780 | 423,285,709 |
+| symbols | 8,892 | 8,900 |
+| parse status | clean | clean |
+| unknown order references | 0 | 0 |
+| crossed books | 0 | 0 |
+| conservation holds | all 8,892 | all 8,900 |
+
+- **Zero unknown order references across 692 million messages.** Every execute,
+  cancel, delete, and replace resolved to a live order. One wrong byte offset in
+  any decoder produces garbage references within seconds, so this is strong
+  evidence the offsets are byte-exact.
+- Share conservation (`added = executed + canceled + resting`) holds in every
+  book on both days, and neither day produced a crossed book.
+- The second day needed no code change, which is the point of running it: it
+  tests whether anything here was fitted to one session.
+- Busiest minute of the first day: 3.7 M messages during the 16:00 closing
+  auction, 19.9× the day's mean.
 - The market-making sandbox runs against the real AAPL flow (see finding 6).
 
 The unedited output of these runs is in [docs/runs/](docs/runs/), with the
@@ -132,6 +147,19 @@ Measured over the day: 118.6 M adds, 114.4 M deletes, 21.6 M replaces, and only
 design notes assumed. Only **1.49%** of all posted shares ever traded. The
 dispersion between symbols is larger than the average: `NIO` removes 4.8 orders
 per execution, `QQQ` 50, and `URTY` 3,800.
+
+The mix barely moves on the second day, which is what makes it a property of
+the market rather than of one session:
+
+| share of book events | 2019-12-30 | 2020-01-30 |
+|---|---:|---:|
+| add | 45.1% | 44.7% |
+| delete | 43.4% | 43.2% |
+| replace | 8.2% | 8.8% |
+| execute | 2.2% | 2.1% |
+| partial cancel | 1.1% | 1.2% |
+| removals per execution | 20.1 | 21.7 |
+| posted shares that traded | 1.49% | 1.14% |
 
 ![Cancels per trade by symbol](docs/img/cancel-ratio.svg)
 
@@ -264,8 +292,8 @@ cmake --build build-fuzz --parallel
 
 ## Limitations
 
-- Validation covers one venue and one day (NASDAQ, 2019-12-30). Other days are
-  a download away; other venues are other protocols.
+- Validation covers one venue (NASDAQ) on two days. Other venues are other
+  protocols, and nothing here has seen an opening auction modelled as such.
 - The engine serves one client session and one symbol. The threading
   architecture was the goal; multi-tenancy is plumbing.
 - The MoldUDP64 feed has sequencing and gap detection but no re-request
