@@ -1,5 +1,5 @@
 file            ./12302019.NASDAQ_ITCH50
-messages        268,744,780 in 720.0 s
+messages        268,744,780 in 648.2 s
 symbols         8,892
 level samples   471,199 books sampled across 54 ticks (every 5,000,000 messages)
 
@@ -10,7 +10,8 @@ active price levels per book (both sides, sampled)
 dense-ladder slots needed per side (best to worst active price)
   p50 255,800   p90 1,999,871,801   p99 1,999,992,064   p99.9 1,999,999,001   max 1,999,999,856
   widest span observed: SHIPW at 1,999,999,856 slots
-  the feed-safe [0, $200] range needs 2,000,000: 0x the p99.9 book
+  at 40 bytes per slot that is 10.2 MB per side at p50, 80.0 GB at p90
+  the median book holds 53 levels inside a span of 255,800 slots: 4826x
 
 orders resting at the best level (queue you join behind)
   p50 1   p90 4   p99 16   max 213

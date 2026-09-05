@@ -174,8 +174,8 @@ about $200,000. At 40 bytes per slot that is 10 MB per side at the median and
 
 This is the sharpest statement of the whole ladder comparison. **A tree pays
 for the levels that exist; an array pays for the distance between the furthest
-apart of them.** On real data those two numbers differ by four orders of
-magnitude, and no sizing policy closes that gap, because the outliers are real
+apart of them.** On the measured day those two numbers differ by a factor of
+4,826, and no sizing policy closes that gap, because the outliers are real
 orders that a correct book has to hold. A windowed dense ladder is not a tuning
 change to the array; it is a different data structure with its own eviction
 problem.

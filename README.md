@@ -111,8 +111,8 @@ mid moves 136 ticks against each fill within 1 ms and 182 ticks by 1 s. That
 markout curve is what adverse selection looks like in the accounting, and it
 is the number a market-making backtest exists to produce.
 
-**7. Level count and price span differ by four orders of magnitude, and the
-array ladder loses on the second one.** The median book holds just 53 active
+**7. Level count and price span differ by a factor of 4,800, and the array
+ladder loses on the second one.** The median book holds just 53 active
 price levels, which sounds like an array would be cheap. Those levels are
 spread across 255,800 ticks. A tree pays for the levels that exist; an array
 indexed by price offset pays for the distance between the furthest apart of
