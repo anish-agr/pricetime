@@ -17,5 +17,8 @@ CMakeUserPresets.json
 
 # market data and run output (keep large captures out of the repo)
 *.itch
+# ...except the fuzz corpus, which is small, committed on purpose, and
+# replayed as a regression suite on every platform.
+!fuzz/corpus/*.itch
 *.NASDAQ_ITCH50
 *.NASDAQ_ITCH50.gz
