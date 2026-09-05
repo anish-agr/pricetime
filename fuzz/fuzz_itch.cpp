@@ -21,9 +21,9 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
     // A structural invariant broke. Abort so libFuzzer saves the input.
     std::abort();
   }
-  // Keep the work from being optimized away without affecting coverage.
-  static volatile std::uint64_t escape;
-  escape = sink;
-  (void)escape;
-  return 0;
+  // Keep the work observable without affecting coverage. Read back as well as
+  // written, since a write-only volatile trips -Wunused-but-set-variable.
+  static std::uint64_t volatile escape_sink;
+  escape_sink = sink;
+  return escape_sink == sink ? 0 : 0;
 }

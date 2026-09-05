@@ -16,20 +16,28 @@ using pricetime::fuzz::fuzz_one;
 
 namespace {
 
+std::uint64_t volatile g_escape_sink = 0;
+
+// Keeps a result observable so no stage of the target can be optimized away.
+// The value is read back as well as written: a write-only volatile still trips
+// -Wunused-but-set-variable on GCC, the same trap test_alloc.cpp documents.
+bool escape(std::uint64_t v) {
+  g_escape_sink = v;
+  return g_escape_sink == v;
+}
+
 std::vector<std::uint8_t> read_file(const std::filesystem::path& p) {
   std::ifstream in(p, std::ios::binary);
   return std::vector<std::uint8_t>((std::istreambuf_iterator<char>(in)),
                                    std::istreambuf_iterator<char>());
 }
 
-// Keeps the result of a run from being optimized away.
 void run(const std::uint8_t* data, std::size_t size, const char* what) {
   bool sound = true;
   const std::uint64_t sink = fuzz_one(data, size, &sound);
   INFO("input: ", what, " (", size, " bytes)");
   CHECK(sound);
-  static volatile std::uint64_t escape;
-  escape = sink;
+  CHECK(escape(sink));
 }
 
 std::vector<std::uint8_t> valid_stream() {
@@ -122,8 +130,7 @@ TEST_CASE("fuzz corpus: randomized mutations of a valid stream") {
       INFO("mutation iteration ", iter, " broke a structural invariant");
       REQUIRE(sound);
     }
-    static volatile std::uint64_t escape;
-    escape = sink;
+    escape(sink);
   }
 }
 
@@ -139,7 +146,6 @@ TEST_CASE("fuzz corpus: pure random bytes") {
       INFO("random iteration ", iter);
       REQUIRE(sound);
     }
-    static volatile std::uint64_t escape;
-    escape = sink;
+    escape(sink);
   }
 }
