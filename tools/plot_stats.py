@@ -64,7 +64,7 @@ def read_csv(path):
 
 
 # ---------------------------------------------------------------- lifetimes
-def chart_lifetimes(rows, out):
+def chart_lifetimes(rows, out, label):
     if not rows:
         return False
     labels = [r[0] for r in rows]
@@ -80,8 +80,8 @@ def chart_lifetimes(rows, out):
     fast = {"< 1 us", "1-10 us", "10-100 us", "100 us - 1 ms", "1-10 ms"}
 
     b = ['  <text x="0" y="20" class="hd">How long a real order rests before it is removed</text>']
-    b.append('  <text x="0" y="40" class="sub">NASDAQ, 2019-12-30. %s sampled orders, add to removal.</text>'
-             % commas(total))
+    b.append('  <text x="0" y="40" class="sub">%s. %s sampled orders, add to removal.</text>'
+             % (esc(label), commas(total)))
     cum = 0
     for i, (lab, n) in enumerate(zip(labels, counts)):
         y = top + i * (bar_h + gap)
@@ -278,12 +278,14 @@ def main():
     ap.add_argument("--stats", required=True, help="prefix passed to book_stats --out")
     ap.add_argument("--replay", default="docs/runs/real-day-replay.txt")
     ap.add_argument("--outdir", default="docs/img")
+    ap.add_argument("--label", default="NASDAQ, 2019-12-30",
+                    help="dataset label printed on the charts")
     args = ap.parse_args()
     os.makedirs(args.outdir, exist_ok=True)
 
     made = []
     if chart_lifetimes(read_csv(args.stats + "-lifetimes.csv"),
-                       os.path.join(args.outdir, "order-lifetime.svg")):
+                       os.path.join(args.outdir, "order-lifetime.svg"), args.label):
         made.append("order-lifetime.svg")
     if chart_spans(read_csv(args.stats + "-spans.csv"),
                    os.path.join(args.outdir, "ladder-slots.svg")):
