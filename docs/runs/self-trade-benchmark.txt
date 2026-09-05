@@ -1,0 +1,24 @@
+cpu: Intel(R) Core(TM) Ultra 5 225U
+pinned to core 10 (auto: best EfficiencyClass): yes
+high priority: yes
+tsc calibration: 3.072 ticks/ns
+timer overhead (back-to-back rdtsc, included in every sample): p50 13.0 ns, p99 13.7 ns
+ops per scenario: 1000000
+
+| ladder | operation             | samples |  p50 ns |  p90 ns |  p99 ns | p99.9 ns |  max ns | mean ns | Mops/s |
+|--------|-----------------------|---------|---------|---------|---------|----------|---------|---------|--------|
+| map    | add (passive)         | 1000000 |   179.7 |   245.4 |   315.8 |    438.8 |   98755 |   206.6 |   4.33 |
+| map    | cancel (random order) | 1000000 |   348.3 |   403.0 |   584.6 |    778.6 |   68644 |   354.3 |   2.68 |
+| map    | mixed add             |  500000 |   181.6 |   219.4 |   298.2 |    397.1 |   80004 |   180.1 |   3.87 |
+| map    | mixed cancel          |  500000 |   209.6 |   343.1 |   445.3 |    546.2 |   86436 |   245.8 |   3.87 |
+| map    | execute (1 fill)      | 1000000 |   190.8 |   235.7 |   350.3 |    466.1 |   63306 |   200.8 |   4.44 |
+| tight  | add (passive)         | 1000000 |   176.4 |   203.8 |   323.6 |    442.7 |  147090 |   191.3 |   4.66 |
+| tight  | cancel (random order) | 1000000 |   347.7 |   395.2 |   544.9 |    684.9 |   75294 |   351.7 |   2.70 |
+| tight  | mixed add             |  500000 |   179.0 |   199.2 |   287.8 |    387.4 |   61982 |   170.9 |   4.02 |
+| tight  | mixed cancel          |  500000 |   207.0 |   342.4 |   436.2 |    546.2 |   81548 |   240.8 |   4.02 |
+| tight  | execute (1 fill)      | 1000000 |   194.0 |   242.8 |   358.1 |    466.8 |  103831 |   205.6 |   4.35 |
+| map    | execute (stp off)     |  500001 |   181.0 |   210.3 |   321.6 |    402.3 |   76109 |   188.0 |   4.85 |
+| map    | execute (stp, miss)   |  500001 |   182.3 |   212.2 |   324.2 |    416.7 |   76437 |   189.8 |   4.81 |
+| map    | execute (stp, hit)    |  500001 |   181.6 |   201.8 |   311.2 |    397.8 | 17525437 |   210.5 |   4.38 |
+
+state fingerprints (optimizer sink): dense 0000000000000000, map a364b49e1b12e3dc

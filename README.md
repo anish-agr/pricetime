@@ -160,7 +160,10 @@ charts above regenerate from it with `python tools/plot_stats.py`.
   costs zero bytes per order and a static assertion keeps it that way.
   Fill-or-kill takes it into account: its pre-scan walks orders rather than
   levels when prevention is active, because promising all-or-nothing and then
-  stopping halfway is the one outcome that order type forbids.
+  stopping halfway is the one outcome that order type forbids. Measured cost
+  of having it compiled in and enabled but not firing: 181.0 to 182.3 ns p50
+  on a one-fill execute, which is inside run-to-run noise
+  ([the run](docs/runs/self-trade-benchmark.txt)).
 - **ITCH 5.0.** Big-endian decoders, a framed BinaryFILE reader, a separately
   written encoder so round-trip agreement is evidence about the spec rather
   than two copies of one misreading, and multi-symbol reconstruction through a

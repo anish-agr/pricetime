@@ -23,7 +23,11 @@ earlier memory-mapped run at 0.34 M msg/s and is kept because it carries the
 intraday profile; the two rows above it are the same file replayed after the
 routing-index and ladder changes.
 
-Book latency benchmarks are not included here. The most recent local run was
+| `real-day-statistics.txt` | the microstructure distributions behind findings 7 to 9: active levels, price span, order lifetime, order size, cancel-to-trade by symbol | `book_stats 12302019.NASDAQ_ITCH50 --out stats` |
+| `stats-*.csv` | the same data in machine-readable form; `tools/plot_stats.py` turns these into the charts in the README | (written by the command above) |
+| `self-trade-benchmark.txt` | what self-trade prevention costs when enabled but not firing | `pricetime_bench --ops 1000000 --ladder map --no-adversarial --no-idmap-compare` |
+
+Book latency benchmarks are otherwise not included here. The most recent local run was
 taken on a thermally throttled machine (timer overhead p50 of 35 ns against
 13 ns for the published run), so its numbers are not comparable to the table
 in the README and publishing them alongside would be misleading. Reproduce
