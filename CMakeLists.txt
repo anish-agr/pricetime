@@ -11,6 +11,7 @@ option(PRICETIME_BUILD_TOOLS "Build command-line tools" ON)
 option(PRICETIME_WERROR "Treat warnings as errors" OFF)
 option(PRICETIME_SANITIZE "Build with address and undefined-behavior sanitizers" OFF)
 option(PRICETIME_TSAN "Build with the thread sanitizer" OFF)
+option(PRICETIME_FUZZ "Build the libFuzzer targets (requires clang)" OFF)
 
 # Core: header-only, zero external dependencies.
 add_library(pricetime INTERFACE)
@@ -66,4 +67,8 @@ endif()
 
 if(PRICETIME_BUILD_TOOLS)
   add_subdirectory(tools)
+endif()
+
+if(PRICETIME_FUZZ)
+  add_subdirectory(fuzz)
 endif()

@@ -32,12 +32,20 @@ add_executable(pricetime_tests
   test_moldudp64.cpp
   test_itch_stream.cpp
   test_ladder_pooled.cpp
-  test_self_trade.cpp)
+  test_self_trade.cpp
+  test_fuzz_corpus.cpp)
 
 find_package(Threads REQUIRED)
 
 target_link_libraries(pricetime_tests
   PRIVATE pricetime::pricetime pricetime_warnings doctest::doctest Threads::Threads)
+
+# The fuzz target's body is shared with the libFuzzer driver, and the corpus
+# it has accumulated is replayed here so those inputs stay regression tests on
+# compilers where libFuzzer is not available.
+target_include_directories(pricetime_tests PRIVATE ${CMAKE_SOURCE_DIR}/fuzz)
+target_compile_definitions(pricetime_tests
+  PRIVATE PRICETIME_FUZZ_CORPUS_DIR="${CMAKE_SOURCE_DIR}/fuzz/corpus")
 
 # doctest specializes std::tuple, which MSVC 19.44+ reports as C5285. It is a
 # third-party header and this build treats warnings as errors, so the
