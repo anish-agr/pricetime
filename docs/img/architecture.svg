@@ -1,0 +1,94 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="880" height="392" viewBox="0 0 880 392" role="img" aria-label="pricetime architecture: an ITCH file and a TCP order-entry session both feed a price-time order book, which publishes ITCH inside MoldUDP64 over UDP">
+  <style>
+    .hd   { font: 600 15px -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; fill: #2B3540; }
+    .box  { font: 600 13px -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; fill: #2B3540; }
+    .t    { font: 12px -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; fill: #5B6772; }
+    .mono { font: 11.5px 'SF Mono', Consolas, monospace; fill: #5B6772; }
+    .tag  { font: 600 10.5px 'SF Mono', Consolas, monospace; fill: #2E8B7A; letter-spacing: .06em; }
+    .fill-card { fill: #FFFFFF; }
+    .fill-core { fill: #F1F6F5; }
+    .stroke-rule { stroke: #C9D2DA; }
+    .stroke-core { stroke: #2E8B7A; }
+    .arrow { stroke: #8C99A6; }
+    @media (prefers-color-scheme: dark) {
+      .hd, .box { fill: #D6DEE6; }
+      .t, .mono { fill: #98A6B2; }
+      .tag { fill: #63C0AF; }
+      .fill-card { fill: #141C24; }
+      .fill-core { fill: #16261F; }
+      .stroke-rule { stroke: #2A3540; }
+      .stroke-core { stroke: #63C0AF; }
+      .arrow { stroke: #6C7A88; }
+    }
+  </style>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#8C99A6"/>
+    </marker>
+  </defs>
+
+  <text x="0" y="16" class="hd">pricetime</text>
+  <text x="86" y="16" class="t">one order book, fed from a file or from a socket</text>
+
+  <!-- ── inputs ─────────────────────────────────────────────── -->
+  <rect x="0" y="44" width="196" height="76" rx="4" class="fill-card stroke-rule" stroke-width="1"/>
+  <text x="14" y="66" class="tag">MARKET DATA IN</text>
+  <text x="14" y="86" class="box">NASDAQ ITCH 5.0</text>
+  <text x="14" y="104" class="mono">8.25 GB · 268.7M messages</text>
+
+  <rect x="0" y="252" width="196" height="76" rx="4" class="fill-card stroke-rule" stroke-width="1"/>
+  <text x="14" y="274" class="tag">ORDER ENTRY IN</text>
+  <text x="14" y="294" class="box">TCP, 40-byte binary</text>
+  <text x="14" y="312" class="mono">fixed size · magic tail</text>
+
+  <!-- ── decode / recv ──────────────────────────────────────── -->
+  <rect x="240" y="44" width="176" height="76" rx="4" class="fill-card stroke-rule" stroke-width="1"/>
+  <text x="254" y="66" class="tag">DECODE</text>
+  <text x="254" y="86" class="box">parser + replayer</text>
+  <text x="254" y="104" class="mono">streamed · fuzzed</text>
+
+  <rect x="240" y="252" width="176" height="76" rx="4" class="fill-card stroke-rule" stroke-width="1"/>
+  <text x="254" y="274" class="tag">RECV THREAD</text>
+  <text x="254" y="294" class="box">SPSC queue</text>
+  <text x="254" y="312" class="mono">wait-free · no locks</text>
+
+  <!-- ── the core ───────────────────────────────────────────── -->
+  <rect x="462" y="96" width="216" height="180" rx="5" class="fill-core stroke-core" stroke-width="1.5"/>
+  <text x="478" y="120" class="tag">THE BOOK</text>
+  <text x="478" y="142" class="box">OrderBook&lt;Ladder, IdMap&gt;</text>
+  <text x="478" y="166" class="mono">price-time priority</text>
+  <text x="478" y="184" class="mono">O(1) cancel by id</text>
+  <text x="478" y="202" class="mono">intrusive FIFO per level</text>
+  <text x="478" y="220" class="mono">arena, zero alloc on the</text>
+  <text x="478" y="238" class="mono">hot path</text>
+  <text x="478" y="260" class="mono">owned by one thread</text>
+
+  <!-- ── outputs ────────────────────────────────────────────── -->
+  <rect x="722" y="44" width="158" height="76" rx="4" class="fill-card stroke-rule" stroke-width="1"/>
+  <text x="736" y="66" class="tag">STRATEGY</text>
+  <text x="736" y="86" class="box">sandbox</text>
+  <text x="736" y="104" class="mono">exact queue position</text>
+
+  <rect x="722" y="148" width="158" height="76" rx="4" class="fill-card stroke-rule" stroke-width="1"/>
+  <text x="736" y="170" class="tag">MARKET DATA OUT</text>
+  <text x="736" y="190" class="box">ITCH in MoldUDP64</text>
+  <text x="736" y="208" class="mono">sequenced UDP</text>
+
+  <rect x="722" y="252" width="158" height="76" rx="4" class="fill-card stroke-rule" stroke-width="1"/>
+  <text x="736" y="274" class="tag">ORDER ENTRY OUT</text>
+  <text x="736" y="294" class="box">send thread</text>
+  <text x="736" y="312" class="mono">TSC echoed back</text>
+
+  <!-- ── arrows ─────────────────────────────────────────────── -->
+  <line x1="196" y1="82"  x2="234" y2="82"  class="arrow" stroke-width="1.4" marker-end="url(#a)"/>
+  <line x1="196" y1="290" x2="234" y2="290" class="arrow" stroke-width="1.4" marker-end="url(#a)"/>
+  <path d="M 416 82 L 440 82 L 440 150 L 456 150"  class="arrow" stroke-width="1.4" fill="none" marker-end="url(#a)"/>
+  <path d="M 416 290 L 440 290 L 440 222 L 456 222" class="arrow" stroke-width="1.4" fill="none" marker-end="url(#a)"/>
+  <path d="M 678 150 L 700 150 L 700 82 L 716 82"   class="arrow" stroke-width="1.4" fill="none" marker-end="url(#a)"/>
+  <line x1="678" y1="186" x2="716" y2="186" class="arrow" stroke-width="1.4" marker-end="url(#a)"/>
+  <path d="M 678 222 L 700 222 L 700 290 L 716 290" class="arrow" stroke-width="1.4" fill="none" marker-end="url(#a)"/>
+
+  <!-- ── footer ─────────────────────────────────────────────── -->
+  <line x1="0" y1="352" x2="880" y2="352" class="stroke-rule" stroke-width="1" opacity="0.7"/>
+  <text x="0" y="374" class="t">Ladder and IdMap are compile-time policies, so the structural choices could be raced against each other instead of argued about.</text>
+</svg>

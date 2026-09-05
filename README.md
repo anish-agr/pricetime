@@ -10,20 +10,7 @@ across 8,892 symbols.
 ![license](https://img.shields.io/badge/license-MIT-green)
 ![deps](https://img.shields.io/badge/core%20dependencies-zero-orange)
 
-```
-                     ┌─────────────────────────────────────────────────────┐
-   NASDAQ ITCH 5.0   │                     pricetime                       │
-   full-day file ────┼─► read ─► parser ─► MultiBook ─► strategy sandbox   │
-   (real, 8.25 GB)   │              │      (per-symbol   (exact queue-      │
-                     │              │       books)        position fills)   │
-                     │   ┌──────────┴──────────────────────────┐           │
-   order entry ──────┼─► │  matching engine (4 threads,        │ ─► ITCH   │
-   (TCP, 40-byte     │   │  SPSC queues, lock-free handoff,    │    inside │
-    binary protocol) │   │  book owned by one thread)          │  MoldUDP64│
-                     │   └─────────────────────────────────────┘  over UDP │
-                     └─────────────────────────────────────────────────────┘
-        core: OrderBook<Ladder, IdMap>, both policies swappable and measured
-```
+![pricetime architecture](docs/img/architecture.svg)
 
 ## Numbers
 
