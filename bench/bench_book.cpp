@@ -68,6 +68,7 @@ struct Config {
   bool run_stdmap_id = true;  // also bench the std::unordered_map id policy
   bool run_adversarial = true;
   bool run_tight = true;  // dense ladder sized to the instrument, not the universe
+  bool run_stp = true;    // what self-trade prevention costs when it is off
 };
 
 // The wide ladder spans 2^17 ticks: enough for any instrument, and 5 MB per
@@ -256,6 +257,61 @@ void run_adversarial(const char* ladder_name, const Config& cfg, std::vector<Row
                   static_cast<double>(reps) / secs / 1e6});
 }
 
+// Self-trade prevention adds a branch to the innermost matching loop, so the
+// question it has to answer is what that branch costs when nobody uses the
+// feature. Three configurations over an identical fill-heavy workload:
+//
+//   off        policy None, no participant. What every other row measures.
+//   on, miss   policy set, aggressor and rester from different participants.
+//              This is the price of having the feature compiled in at all.
+//   on, hit    every fill is a self-match, so the prevention path runs every
+//              time. Not a realistic mix, but it bounds the cost.
+//
+// The resting side is rebuilt for each configuration so all three see the same
+// book shape, and only the crossing add is timed.
+template <class MakeBook>
+void run_stp(const char* ladder_name, const Config& cfg, std::vector<Row>& rows, MakeBook make) {
+  struct Variant {
+    const char* label;
+    SelfTradePolicy policy;
+    ParticipantId resting;
+    ParticipantId aggressor;
+  };
+  const Variant variants[] = {
+      {"execute (stp off)", SelfTradePolicy::None, 0, 0},
+      {"execute (stp, miss)", SelfTradePolicy::CancelResting, 1, 2},
+      {"execute (stp, hit)", SelfTradePolicy::CancelResting, 1, 1},
+  };
+
+  for (const Variant& v : variants) {
+    auto book = make();
+    const std::uint64_t reps = cfg.ops / 2 + 1;
+    book.reserve_orders(reps * 2 + 16);
+    book.set_self_trade_policy(v.policy);
+    OrderId next_id = 1;
+
+    // One resting ask per rep, all at the same price so the aggressor always
+    // meets exactly one order and the measurement is not diluted by depth.
+    const Price px = 100000;
+    for (std::uint64_t i = 0; i < reps; ++i) {
+      book.add_limit_as(v.resting, next_id++, Side::Ask, px, 100);
+    }
+
+    pb::SampleSet s(reps);
+    const auto w0 = std::chrono::steady_clock::now();
+    for (std::uint64_t i = 0; i < reps; ++i) {
+      const OrderId aggressor = next_id++;
+      const std::uint64_t t0 = pb::now_ticks();
+      book.add_limit_as(v.aggressor, aggressor, Side::Bid, px, 100);
+      const std::uint64_t t1 = pb::now_ticks();
+      s.add(t1 - t0);
+    }
+    const double secs = wall_seconds(w0);
+    rows.push_back({ladder_name, v.label, s.stats(),
+                    static_cast<double>(reps) / secs / 1e6});
+  }
+}
+
 void print_rows(const std::vector<Row>& rows, double tpn) {
   std::printf("\n| ladder | operation             | samples |  p50 ns |  p90 ns |  p99 ns "
               "| p99.9 ns |  max ns | mean ns | Mops/s |\n");
@@ -283,6 +339,8 @@ int main(int argc, char** argv) {
       const char* v = argv[++i];
       cfg.run_dense = std::strcmp(v, "dense") == 0 || std::strcmp(v, "both") == 0;
       cfg.run_map = std::strcmp(v, "map") == 0 || std::strcmp(v, "both") == 0;
+    } else if (std::strcmp(argv[i], "--no-stp") == 0) {
+      cfg.run_stp = false;
     } else if (std::strcmp(argv[i], "--no-adversarial") == 0) {
       cfg.run_adversarial = false;
     } else if (std::strcmp(argv[i], "--no-idmap-compare") == 0) {
@@ -356,6 +414,9 @@ int main(int argc, char** argv) {
       run_adversarial("map", cfg, rows,
                       [] { return OrderBook<MapLadder, OpenAddressIdMap>{}; });
     }
+  }
+  if (cfg.run_stp) {
+    run_stp("map", cfg, rows, [] { return OrderBook<MapLadder, OpenAddressIdMap>{}; });
   }
   print_rows(rows, tpn);
   std::printf("\nstate fingerprints (optimizer sink): dense %016" PRIx64 ", map %016" PRIx64
