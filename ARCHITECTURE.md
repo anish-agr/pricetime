@@ -183,6 +183,12 @@ orders that a correct book has to hold. A windowed dense ladder is not a tuning
 change to the array; it is a different data structure with its own eviction
 problem.
 
+The second session, 57% busier, reproduces this almost exactly: median span
+253,501 slots against 255,800, median level count 53 on both days, ratio 4,783
+against 4,826. Two sessions that differ that much in volume landing within 1%
+on the shape of the book is what makes this a property of the market rather
+than of one file.
+
 Taken together: the array ladder buys nothing measurable, carries a 1400x
 worst case, and cannot be sized for real data. The configuration to ship is the
 pooled tree ladder with the open-addressing id map, which is not what I assumed

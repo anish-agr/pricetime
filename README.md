@@ -136,7 +136,8 @@ book needs 80 GB, because far-out resting quotes stretch the span to nearly
 the whole representable price range (the widest, `SHIPW`, spans 2.0 billion
 ticks, about $200,000). This closes the open question the profiling raised: a
 windowed dense ladder is not a small fix to the array, it is a different data
-structure.
+structure. The second day agrees to within 1%: median span 253,501 slots
+against 255,800, and the same ratio of 4,783 to 4,826.
 
 ![Slots a dense ladder would need](docs/img/ladder-slots.svg)
 
@@ -175,6 +176,30 @@ These three come from `book_stats`, which walks the day and reports the
 distributions rather than the totals. Its full output is in
 [docs/runs/real-day-statistics.txt](docs/runs/real-day-statistics.txt), and the
 charts above regenerate from it with `python tools/plot_stats.py`.
+
+### They are properties of the market, not of one file
+
+Running the same tool over the second session is what turns these from
+observations into findings. The two days differ by 57% in volume and land on
+the same distributions:
+
+| | 2019-12-30 | 2020-01-30 |
+|---|---:|---:|
+| active price levels per book, p50 | 53 | 53 |
+| active price levels per book, mean | 82.8 | 82.7 |
+| dense-ladder slots per side, p50 | 255,800 | 253,501 |
+| span ÷ level count, at the median | 4,826× | 4,783× |
+| orders resting at the best level, p50 | 1 | 1 |
+| orders removed within 10 ms | 19.1% | 21.0% |
+| median order lifetime | 1.21 s | 0.78 s |
+| removals per execution | 20.4 | 21.8 |
+| orders of exactly 100 shares | 63.1% | 61.0% |
+
+The median book holds 53 price levels on both days, and the ratio that kills
+the array ladder lands within 1% of itself. The one number that moves is the
+median lifetime, which shortens on the busier day, and that is the direction it
+should move. Full output:
+[docs/runs/second-day-statistics.txt](docs/runs/second-day-statistics.txt).
 
 ## Components
 
