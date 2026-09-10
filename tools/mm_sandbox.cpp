@@ -30,19 +30,13 @@
 #include "pricetime/market_maker.hpp"
 #include "pricetime/multi_book.hpp"
 #include "pricetime/queue_position.hpp"
+#include "cli.hpp"
 
 using namespace pricetime;
 using namespace pricetime::itch;
+using namespace pricetime::cli;
 
 namespace {
-
-std::string commas(std::uint64_t v) {
-  std::string s = std::to_string(v);
-  for (std::ptrdiff_t i = static_cast<std::ptrdiff_t>(s.size()) - 3; i > 0; i -= 3) {
-    s.insert(static_cast<std::size_t>(i), ",");
-  }
-  return s;
-}
 
 // ITCH prices carry four implied decimal places.
 double dollars(std::int64_t ticks_times_shares) {

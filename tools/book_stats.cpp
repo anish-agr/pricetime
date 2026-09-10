@@ -45,17 +45,13 @@
 #include "pricetime/itch_stream.hpp"
 #include "pricetime/ladder_pooled.hpp"
 #include "pricetime/multi_book.hpp"
+#include "cli.hpp"
 
 using namespace pricetime;
 using namespace pricetime::itch;
+using namespace pricetime::cli;
 
 namespace {
-
-std::string commas(std::uint64_t v) {
-  std::string s = std::to_string(v);
-  for (int i = static_cast<int>(s.size()) - 3; i > 0; i -= 3) s.insert(static_cast<std::size_t>(i), ",");
-  return s;
-}
 
 // Log-spaced lifetime buckets. ITCH timestamps are nanoseconds since midnight.
 struct LifetimeBucket {
@@ -196,21 +192,6 @@ struct Options {
   std::vector<Symbol> symbols;
   std::size_t top = 15;
 };
-
-std::vector<Symbol> parse_symbols(const char* csv) {
-  std::vector<Symbol> out;
-  std::string cur;
-  for (const char* p = csv;; ++p) {
-    if (*p == ',' || *p == '\0') {
-      if (!cur.empty()) out.push_back(Symbol(cur));
-      cur.clear();
-      if (*p == '\0') break;
-    } else {
-      cur.push_back(*p);
-    }
-  }
-  return out;
-}
 
 // Exact percentile from a sorted sample set. No interpolation, no binning:
 // the same rule the latency benchmark uses.

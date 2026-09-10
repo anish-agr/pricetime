@@ -21,8 +21,10 @@
 
 #include "pricetime/itch_writer.hpp"
 #include "pricetime/symbol.hpp"
+#include "cli.hpp"
 
 using namespace pricetime;
+using namespace pricetime::cli;
 
 namespace {
 
@@ -32,21 +34,6 @@ std::uint64_t next_random(std::uint64_t& state) {
   z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ull;
   z = (z ^ (z >> 27)) * 0x94D049BB133111EBull;
   return z ^ (z >> 31);
-}
-
-std::vector<Symbol> parse_symbols(const char* csv) {
-  std::vector<Symbol> out;
-  std::string cur;
-  for (const char* p = csv;; ++p) {
-    if (*p == ',' || *p == '\0') {
-      if (!cur.empty()) out.push_back(Symbol(cur));
-      cur.clear();
-      if (*p == '\0') break;
-    } else {
-      cur.push_back(*p);
-    }
-  }
-  return out;
 }
 
 struct LiveOrder {

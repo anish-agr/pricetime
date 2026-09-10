@@ -25,26 +25,13 @@
 #include "pricetime/ladder_pooled.hpp"
 #include "pricetime/mmap_file.hpp"
 #include "pricetime/multi_book.hpp"
+#include "cli.hpp"
 
 using namespace pricetime;
 using namespace pricetime::itch;
+using namespace pricetime::cli;
 
 namespace {
-
-std::vector<Symbol> parse_symbols(const char* csv) {
-  std::vector<Symbol> out;
-  std::string cur;
-  for (const char* p = csv;; ++p) {
-    if (*p == ',' || *p == '\0') {
-      if (!cur.empty()) out.push_back(Symbol(cur));
-      cur.clear();
-      if (*p == '\0') break;
-    } else {
-      cur.push_back(*p);
-    }
-  }
-  return out;
-}
 
 // ITCH timestamps are nanoseconds since midnight US/Eastern.
 std::string clock_of(std::uint64_t ns) {
@@ -53,14 +40,6 @@ std::string clock_of(std::uint64_t ns) {
   std::snprintf(buf, sizeof(buf), "%02" PRIu64 ":%02" PRIu64 ":%02" PRIu64, total_s / 3600,
                 (total_s / 60) % 60, total_s % 60);
   return buf;
-}
-
-std::string commas(std::uint64_t v) {
-  std::string s = std::to_string(v);
-  for (std::ptrdiff_t i = static_cast<std::ptrdiff_t>(s.size()) - 3; i > 0; i -= 3) {
-    s.insert(static_cast<std::size_t>(i), ",");
-  }
-  return s;
 }
 
 const char* status_text(ReadStatus s) {
